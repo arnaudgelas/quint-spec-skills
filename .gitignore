@@ -1,0 +1,8 @@
+node_modules/
+.tmp-quint-validation/
+drift-issue.md
+.DS_Store
+.claude*
+CLAUDE.md
+.gemini*
+.codex*
