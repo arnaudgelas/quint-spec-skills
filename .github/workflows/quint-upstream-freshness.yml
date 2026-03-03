@@ -1,0 +1,164 @@
+name: Quint Upstream Freshness
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  offline-freshness-check:
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Run unit tests
+        run: npm test
+      - name: Validate reference governance
+        run: npm run validate:references
+      - name: Validate Quint snippets
+        run: npm run validate:quint -- --strict-labels
+      - name: Typecheck Quint snippets
+        run: npm run validate:quint:typecheck
+      - name: Validate doc freshness rules (offline)
+        run: npm run upstream:check -- --offline
+
+  upstream-drift-watch:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run weekly drift checks
+        id: drift
+        run: |
+          set +e
+          npm run upstream:check > upstream-check.log 2>&1
+          upstream_status=$?
+          npm run validate:references > reference-governance.log 2>&1
+          governance_status=$?
+          npm run validate:quint -- --strict-labels > quint-snippets.log 2>&1
+          quint_status=$?
+
+          echo "upstream_status=$upstream_status" >> "$GITHUB_OUTPUT"
+          echo "governance_status=$governance_status" >> "$GITHUB_OUTPUT"
+          echo "quint_status=$quint_status" >> "$GITHUB_OUTPUT"
+
+          if [ "$upstream_status" -eq 0 ] && [ "$governance_status" -eq 0 ] && [ "$quint_status" -eq 0 ]; then
+            echo "has_drift=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_drift=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build drift report body
+        if: steps.drift.outputs.has_drift == 'true'
+        run: |
+          {
+            echo "# Quint weekly drift report"
+            echo
+            echo "One or more scheduled checks failed."
+            echo
+            echo "## Summary"
+            echo "- Upstream freshness check exit code: \`${{ steps.drift.outputs.upstream_status }}\`"
+            echo "- Reference governance check exit code: \`${{ steps.drift.outputs.governance_status }}\`"
+            echo "- Quint snippet validation exit code: \`${{ steps.drift.outputs.quint_status }}\`"
+            echo
+            echo "## Recommended remediation"
+            echo "1. Run \`npm run upstream:update\` and review generated reference changes."
+            echo "2. Run \`npm run validate:references\` and fix policy mismatches."
+            echo "3. Run \`npm run validate:quint -- --strict-labels\` and \`npm run validate:quint:typecheck\` before merging."
+            echo
+            echo "## Upstream freshness output"
+            echo '```text'
+            sed -n '1,200p' upstream-check.log
+            echo '```'
+            echo
+            echo "## Reference governance output"
+            echo '```text'
+            sed -n '1,200p' reference-governance.log
+            echo '```'
+          } > drift-issue.md
+      - name: Create or update drift issue
+        if: steps.drift.outputs.has_drift == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            const title = 'Quint freshness/governance drift detected'
+            const body = fs.readFileSync('drift-issue.md', 'utf8')
+            const { owner, repo } = context.repo
+
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            })
+
+            const existing = openIssues.find((issue) => !issue.pull_request && issue.title === title)
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body,
+              })
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+              })
+            }
+      - name: Close stale drift issue when healthy
+        if: steps.drift.outputs.has_drift == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Quint freshness/governance drift detected'
+            const { owner, repo } = context.repo
+
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            })
+
+            const existing = openIssues.find((issue) => !issue.pull_request && issue.title === title)
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+              })
+            }
+      - name: Fail on drift
+        if: steps.drift.outputs.has_drift == 'true'
+        run: |
+          echo "Upstream drift detected."
+          exit 1
