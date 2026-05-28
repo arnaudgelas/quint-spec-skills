@@ -69,15 +69,19 @@ While **Safety** proves "nothing bad happens," **Liveness** proves "something go
 
 To prove liveness, you often need to assume **Fairness**: that if an action is enabled, it will eventually be taken.
 
-- **Weak Fairness**: If an action is _continuously_ enabled, it must eventually occur.
-- **Strong Fairness**: If an action is _infinitely often_ enabled (even if disabled in between), it must eventually occur.
+- **Weak Fairness** (`weakFair(A, e)`): If action `A` is _continuously_ enabled (on variable expression `e`), it must eventually occur.
+- **Strong Fairness** (`strongFair(A, e)`): If action `A` is _infinitely often_ enabled, it must eventually occur.
+
+```text
+temporal fairStep = weakFair(step, x)
+```
 
 ### Temporal Properties
 
-Use `temporal` and `eventually` to define liveness:
+Use `temporal`, `always`, `eventually`, and `leadsTo` (v0.32.0) to define liveness:
 
 ```text
-// Liveness: Every pending intent is eventually settled or expired
+// Leads-to: whenever a Pending intent exists, it eventually resolves
 temporal intentsResolve =
   always(
     intents.keys().forall(id =>
@@ -86,9 +90,23 @@ temporal intentsResolve =
     )
   )
 
+// leadsTo shorthand for the above pattern (v0.32.0):
+temporal intentsResolveShort =
+  intents.keys().forall(id =>
+    (status.get(id) == Pending).leadsTo(
+      status.get(id) == Settled or status.get(id) == Expired
+    )
+  )
+
 // Deadlock freedom: the step action always has at least one enabled branch
 // (verified implicitly: if quint run never gets stuck, the model is deadlock-free)
 // Explicitly, ensure step covers all possible states with a stutter branch.
+```
+
+**Verify temporal properties:**
+
+```bash
+quint verify --temporal=intentsResolve --max-steps=20 spec.qnt
 ```
 
 ---
