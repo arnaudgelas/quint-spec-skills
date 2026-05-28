@@ -30,13 +30,13 @@ module Bank {
   var totalSupply: Denom -> Amount
 
   pure def getBalance(bals: Balances, addr: Address, denom: Denom): Amount =
-    if (bals.contains(addr) and bals.get(addr).contains(denom))
+    if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
       bals.get(addr).get(denom)
     else
       0
 
   pure def getSupply(supply: Denom -> Amount, denom: Denom): Amount =
-    if (supply.contains(denom)) supply.get(denom) else 0
+    if (supply.keys().contains(denom)) supply.get(denom) else 0
 
   pure def addBalance(
     bals: Balances,
@@ -44,8 +44,8 @@ module Bank {
     denom: Denom,
     delta: Amount,
   ): Balances = {
-    val addrBals = if (bals.contains(addr)) bals.get(addr) else Map()
-    val current = if (addrBals.contains(denom)) addrBals.get(denom) else 0
+    val addrBals = if (bals.keys().contains(addr)) bals.get(addr) else Map()
+    val current = if (addrBals.keys().contains(denom)) addrBals.get(denom) else 0
     bals.set(addr, addrBals.set(denom, current + delta))
   }
 
@@ -108,7 +108,7 @@ module Bank {
 
 Constant product market maker with swap fees.
 
-```text
+```quint illustrative
 module AMMTypes {
   type Address = str
   type Pool = {
@@ -133,7 +133,7 @@ module AMM {
   var kFloor: int  // Ghost: minimum k = reserve0 * reserve1 maintained since last liquidity event
 
   pure def amountOf(bals: Address -> int, addr: Address): int =
-    if (bals.contains(addr)) bals.get(addr) else 0
+    if (bals.keys().contains(addr)) bals.get(addr) else 0
 
   action init = all {
     pool' = { reserve0: 0, reserve1: 0, totalShares: 0,
@@ -145,45 +145,49 @@ module AMM {
   }
 
   // Add liquidity (simplified: proportional deposits)
-  action addLiquidity(user: Address, amount0: int, amount1: int): bool = all {
-    amount0 > 0,
-    amount1 > 0,
-    amountOf(userBalance0, user) >= amount0,
-    amountOf(userBalance1, user) >= amount1,
+  // val bindings hoisted before all{} so they are in scope across multiple updates
+  action addLiquidity(user: Address, amount0: int, amount1: int): bool = {
     val newShares = if (pool.totalShares == 0) amount0  // First LP
       else amount0 * pool.totalShares / pool.reserve0
-    newShares > 0,
     val newReserve0 = pool.reserve0 + amount0
     val newReserve1 = pool.reserve1 + amount1
-    pool' = { ...pool,
-      reserve0: newReserve0,
-      reserve1: newReserve1,
-      totalShares: pool.totalShares + newShares },
-    lpShares' = lpShares.set(user, amountOf(lpShares, user) + newShares),
-    userBalance0' = userBalance0.setBy(user, b => b - amount0),
-    userBalance1' = userBalance1.setBy(user, b => b - amount1),
-    kFloor' = newReserve0 * newReserve1,  // Update floor to new k after liquidity event
+    all {
+      amount0 > 0,
+      amount1 > 0,
+      amountOf(userBalance0, user) >= amount0,
+      amountOf(userBalance1, user) >= amount1,
+      newShares > 0,
+      pool' = { ...pool,
+        reserve0: newReserve0,
+        reserve1: newReserve1,
+        totalShares: pool.totalShares + newShares },
+      lpShares' = lpShares.set(user, amountOf(lpShares, user) + newShares),
+      userBalance0' = userBalance0.setBy(user, b => b - amount0),
+      userBalance1' = userBalance1.setBy(user, b => b - amount1),
+      kFloor' = newReserve0 * newReserve1,
+    }
   }
 
   // Swap token0 for token1
-  action swap0For1(user: Address, amountIn: int): bool = all {
-    amountIn > 0,
-    amountOf(userBalance0, user) >= amountIn,
-    pool.reserve0 > 0,
-    pool.reserve1 > 0,
-    // Calculate output with fee
+  action swap0For1(user: Address, amountIn: int): bool = {
     val amountInAfterFee = amountIn * (pool.feeDenominator - pool.feeNumerator)
     val amountOut = amountInAfterFee * pool.reserve1 /
       (pool.reserve0 * pool.feeDenominator + amountInAfterFee)
-    amountOut > 0,
-    amountOut < pool.reserve1,
-    pool' = { ...pool,
-      reserve0: pool.reserve0 + amountIn,
-      reserve1: pool.reserve1 - amountOut },
-    userBalance0' = userBalance0.setBy(user, b => b - amountIn),
-    userBalance1' = userBalance1.setBy(user, b => b + amountOut),
-    lpShares' = lpShares,
-    kFloor' = kFloor,  // Swaps must maintain k >= kFloor (fees ensure k only grows)
+    all {
+      amountIn > 0,
+      amountOf(userBalance0, user) >= amountIn,
+      pool.reserve0 > 0,
+      pool.reserve1 > 0,
+      amountOut > 0,
+      amountOut < pool.reserve1,
+      pool' = { ...pool,
+        reserve0: pool.reserve0 + amountIn,
+        reserve1: pool.reserve1 - amountOut },
+      userBalance0' = userBalance0.setBy(user, b => b - amountIn),
+      userBalance1' = userBalance1.setBy(user, b => b + amountOut),
+      lpShares' = lpShares,
+      kFloor' = kFloor,
+    }
   }
 
   action step = {
@@ -210,7 +214,7 @@ module AMM {
 
 Tokenized vault with deposit/withdraw and share accounting.
 
-```text
+```quint illustrative
 module Vault {
   type Address = str
 
@@ -224,7 +228,7 @@ module Vault {
   var userAssets: Address -> int  // External balances
 
   pure def amountOf(bals: Address -> int, user: Address): int =
-    if (bals.contains(user)) bals.get(user) else 0
+    if (bals.keys().contains(user)) bals.get(user) else 0
 
   pure def assetsToShares(assets: int, totAssets: int, totShares: int): int =
     if (totAssets == 0) assets
@@ -241,27 +245,29 @@ module Vault {
     userAssets' = USERS.mapBy(u => 1000),
   }
 
-  action deposit(user: Address, assets: int): bool = all {
-    assets > 0,
-    amountOf(userAssets, user) >= assets,
+  action deposit(user: Address, assets: int): bool =
     val shares = assetsToShares(assets, totalAssets, totalShares)
-    shares > 0,
-    totalAssets' = totalAssets + assets,
-    totalShares' = totalShares + shares,
-    userShares' = userShares.set(user, amountOf(userShares, user) + shares),
-    userAssets' = userAssets.setBy(user, a => a - assets),
-  }
+    all {
+      assets > 0,
+      amountOf(userAssets, user) >= assets,
+      shares > 0,
+      totalAssets' = totalAssets + assets,
+      totalShares' = totalShares + shares,
+      userShares' = userShares.set(user, amountOf(userShares, user) + shares),
+      userAssets' = userAssets.setBy(user, a => a - assets),
+    }
 
-  action withdraw(user: Address, shares: int): bool = all {
-    shares > 0,
-    amountOf(userShares, user) >= shares,
+  action withdraw(user: Address, shares: int): bool =
     val assets = sharesToAssets(shares, totalAssets, totalShares)
-    assets > 0,
-    totalAssets' = totalAssets - assets,
-    totalShares' = totalShares - shares,
-    userShares' = userShares.setBy(user, s => s - shares),
-    userAssets' = userAssets.setBy(user, a => a + assets),
-  }
+    all {
+      shares > 0,
+      amountOf(userShares, user) >= shares,
+      assets > 0,
+      totalAssets' = totalAssets - assets,
+      totalShares' = totalShares - shares,
+      userShares' = userShares.setBy(user, s => s - shares),
+      userAssets' = userAssets.setBy(user, a => a + assets),
+    }
 
   action step = {
     nondet user = USERS.oneOf()
@@ -291,7 +297,7 @@ module Vault {
 
 Basic lending with collateral, borrowing, and liquidation.
 
-```text
+```quint illustrative
 module Lending {
   type Address = str
 
@@ -305,7 +311,7 @@ module Lending {
   var oraclePrice: int          // Price of collateral in borrow terms
 
   pure def amountOf(m: Address -> int, user: Address): int =
-    if (m.contains(user)) m.get(user) else 0
+    if (m.keys().contains(user)) m.get(user) else 0
 
   pure def healthFactor(coll: int, debt: int, price: int): int =
     if (debt == 0) 99999  // Healthy if no debt
@@ -324,27 +330,30 @@ module Lending {
     oraclePrice' = oraclePrice,
   }
 
-  action borrow(user: Address, amount: int): bool = all {
-    amount > 0,
+  action borrow(user: Address, amount: int): bool = {
     val newDebt = amountOf(borrows, user) + amount
     val coll = amountOf(collateral, user)
-    healthFactor(coll, newDebt, oraclePrice) >= COLLATERAL_FACTOR,
-    borrows' = borrows.set(user, newDebt),
-    collateral' = collateral,
-    oraclePrice' = oraclePrice,
+    all {
+      amount > 0,
+      healthFactor(coll, newDebt, oraclePrice) >= COLLATERAL_FACTOR,
+      borrows' = borrows.set(user, newDebt),
+      collateral' = collateral,
+      oraclePrice' = oraclePrice,
+    }
   }
 
-  action liquidate(liquidator: Address, user: Address): bool = all {
+  action liquidate(liquidator: Address, user: Address): bool = {
     val debt = amountOf(borrows, user)
     val coll = amountOf(collateral, user)
-    debt > 0,
-    healthFactor(coll, debt, oraclePrice) < COLLATERAL_FACTOR,
-    // Liquidator repays debt, seizes collateral + bonus
     val seizedCollateral = debt * (100 + LIQUIDATION_BONUS) / (oraclePrice * 100)
-    seizedCollateral <= coll,
-    collateral' = collateral.set(user, coll - seizedCollateral),
-    borrows' = borrows.set(user, 0),
-    oraclePrice' = oraclePrice,
+    all {
+      debt > 0,
+      healthFactor(coll, debt, oraclePrice) < COLLATERAL_FACTOR,
+      seizedCollateral <= coll,
+      collateral' = collateral.set(user, coll - seizedCollateral),
+      borrows' = borrows.set(user, 0),
+      oraclePrice' = oraclePrice,
+    }
   }
 
   // Oracle price can change nondeterministically
