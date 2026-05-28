@@ -8,15 +8,15 @@ Once a Quint specification is verified, the next critical step is ensuring the a
 
 Quint provides three complementary commands for testing and verification, each serving a distinct purpose:
 
-| Command | Mode | Best For |
-|---------|------|----------|
-| `quint test` | Deterministic | Named `run` blocks — fast unit tests, regression suites, reachability witnesses |
-| `quint run` | Randomized | Nondeterministic exploration — finding unexpected states via simulation |
-| `quint verify` | Exhaustive | Complete model checking via Apalache — bounded proof of invariants |
+| Command        | Mode        | Best For                                                                  |
+| -------------- | ----------- | ------------------------------------------------------------------------- |
+| `quint test`   | Named tests | `run` blocks — fast unit tests, regression suites, reachability witnesses |
+| `quint run`    | Randomized  | Nondeterministic exploration — finding unexpected states via simulation   |
+| `quint verify` | Exhaustive  | Complete model checking via Apalache — bounded proof of invariants        |
 
 ### `quint test` — Deterministic Named Tests
 
-`quint test` runs named `run` blocks defined with the `run` keyword. Unlike `quint run`, results are fully deterministic and require no `--invariant` flag — each `run` block specifies its own expected sequence with `.then()` / `.expect()`.
+`quint test` runs named `run` blocks defined with the `run` keyword. Unlike `quint run`, each `run` block specifies its own expected sequence with `.then()` / `.expect()`. Tests are deterministic when the run is deterministic or seeded; randomized tests can use `--max-samples` and `--seed`.
 
 ```bash
 # Run all named `run` blocks in the spec
@@ -27,6 +27,7 @@ quint test spec.qnt --match deposit
 ```
 
 **When to use `quint test`:**
+
 - Regression tests for specific protocol behaviors (happy paths, known edge cases)
 - Proving specific states are reachable (false-invariant witnesses: if the test violates an invariant, the state is reachable)
 - Quick iteration during spec development — deterministic, no randomness
@@ -55,8 +56,8 @@ Quint exports traces using the **Informal Trace Format (ITF)**, a standard JSON 
 Run a randomized simulation that satisfies a property and export the trace:
 
 ```bash
-# Export the trace of a successful run
-quint run --out-itf=trace.itf.json spec.qnt
+# Export traces with model-based testing metadata
+quint run --mbt --out-itf=trace_{seq}.itf.json spec.qnt
 ```
 
 ### Exporting a Counterexample (Bug Path)
@@ -99,7 +100,7 @@ function runTrace(traceFile, implementation) {
     const currentState = trace.states[i]
     const nextState = trace.states[i + 1]
 
-    // Determine which action caused the transition (often annotated in ITF metadata)
+    // Determine which action caused the transition from mbt::actionTaken
     const action = inferAction(currentState, nextState)
 
     // 3. Execution
@@ -120,7 +121,8 @@ function runTrace(traceFile, implementation) {
 
 When building a runner for a specific stack, follow these guidelines:
 
-- **Smart Contracts (Solidity/Foundry, Rust/CosmWasm)**: Use `ffi` (Foreign Function Interface) or file-read utilities to load the JSON. Map Quint's `Address` strings to actual hex addresses. Ensure precision issues (like Quint's infinite ints vs `uint256`) are mapped correctly.
+- **Rust (CosmWasm, Cosmos-SDK)**: [**Quint Connect**](https://github.com/informalsystems/quint-connect) (released February 2026) is Informal Systems' first-party Rust MBT library. It handles ITF parsing, state mapping, and test harness generation for Rust/CosmWasm stacks. Use it instead of building a custom runner from scratch for Rust targets.
+- **Smart Contracts (Solidity/Foundry)**: Use `ffi` (Foreign Function Interface) or file-read utilities to load the JSON. Map Quint's `Address` strings to actual hex addresses. Ensure precision issues (like Quint's infinite ints vs `uint256`) are mapped correctly.
 - **Go (Cosmos-SDK, Backend)**: Use `encoding/json` to unmarshal the ITF file. The runner acts as a standard Go test suite, initializing the keeper/module with the genesis state derived from the first ITF state.
 - **TypeScript (Node.js/Frontend)**: The easiest environment, as JSON parsing is native. Map Quint Maps to JS `Map` or objects.
 
