@@ -227,7 +227,7 @@ module SolverCompetition {
   var nextIntent: int
 
   def fillCount(solver: Address): int =
-    if (solverFillCount.contains(solver)) solverFillCount.get(solver) else 0
+    if (solverFillCount.keys().contains(solver)) solverFillCount.get(solver) else 0
 
   action init = all {
     intentsFilled' = Map(),
@@ -239,7 +239,7 @@ module SolverCompetition {
   action fillNext(solver: Address): bool = all {
     SOLVERS.contains(solver),
     nextIntent <= NUM_INTENTS,
-    not(intentsFilled.contains(nextIntent)),
+    not(intentsFilled.keys().contains(nextIntent)),
     intentsFilled' = intentsFilled.set(nextIntent, solver),
     solverFillCount' = solverFillCount.setBy(solver, c => c + 1),
     nextIntent' = nextIntent + 1,

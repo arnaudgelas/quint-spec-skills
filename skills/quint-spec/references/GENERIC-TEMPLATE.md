@@ -142,11 +142,11 @@ module ResourceAllocation {
     amount > 0,
     PARTICIPANTS.contains(p),
     RESOURCES.contains(r),
-    val currentTotal = if (totalAllocated.contains(r)) totalAllocated.get(r) else 0
-    val capacity = if (TOTAL_CAPACITY.contains(r)) TOTAL_CAPACITY.get(r) else 0
+    val currentTotal = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
+    val capacity = if (TOTAL_CAPACITY.keys().contains(r)) TOTAL_CAPACITY.get(r) else 0
     currentTotal + amount <= capacity,
-    val pAlloc = if (currentAllocations.contains(p)) currentAllocations.get(p) else Map()
-    val currentAlloc = if (pAlloc.contains(r)) pAlloc.get(r) else 0
+    val pAlloc = if (currentAllocations.keys().contains(p)) currentAllocations.get(p) else Map()
+    val currentAlloc = if (pAlloc.keys().contains(r)) pAlloc.get(r) else 0
     currentAllocations' = currentAllocations.set(p, pAlloc.set(r, currentAlloc + amount)),
     totalAllocated' = totalAllocated.set(r, currentTotal + amount),
   }
@@ -155,9 +155,9 @@ module ResourceAllocation {
     amount > 0,
     PARTICIPANTS.contains(p),
     RESOURCES.contains(r),
-    val pMap = if (currentAllocations.contains(p)) currentAllocations.get(p) else Map()
-    val pAlloc = if (pMap.contains(r)) pMap.get(r) else 0
-    val currentTotal = if (totalAllocated.contains(r)) totalAllocated.get(r) else 0
+    val pMap = if (currentAllocations.keys().contains(p)) currentAllocations.get(p) else Map()
+    val pAlloc = if (pMap.keys().contains(r)) pMap.get(r) else 0
+    val currentTotal = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
     pAlloc >= amount,
     currentAllocations' = currentAllocations.set(p, pMap.set(r, pAlloc - amount)),
     totalAllocated' = totalAllocated.set(r, currentTotal - amount),
@@ -175,16 +175,16 @@ module ResourceAllocation {
 
   // Invariants
   val capacityRespected = RESOURCES.forall(r =>
-    val allocated = if (totalAllocated.contains(r)) totalAllocated.get(r) else 0
-    val capacity = if (TOTAL_CAPACITY.contains(r)) TOTAL_CAPACITY.get(r) else 0
+    val allocated = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
+    val capacity = if (TOTAL_CAPACITY.keys().contains(r)) TOTAL_CAPACITY.get(r) else 0
     allocated <= capacity
   )
 
   val totalMatchesSum = RESOURCES.forall(r =>
-    val allocated = if (totalAllocated.contains(r)) totalAllocated.get(r) else 0
+    val allocated = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
     allocated == PARTICIPANTS.fold(0, (sum, p) =>
-      val pMap = if (currentAllocations.contains(p)) currentAllocations.get(p) else Map()
-      sum + if (pMap.contains(r)) pMap.get(r) else 0
+      val pMap = if (currentAllocations.keys().contains(p)) currentAllocations.get(p) else Map()
+      sum + if (pMap.keys().contains(r)) pMap.get(r) else 0
     )
   )
 }
