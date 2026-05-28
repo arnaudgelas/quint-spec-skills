@@ -35,6 +35,7 @@ p.reserve0          // 100
 
 // Spread update (creates new record with updated fields)
 { ...p, reserve0: 150 }
+p.with("reserve0", 150)              // Single-field update (alternative to spread syntax)
 ```
 
 ### Sum Types (Variants)
@@ -76,8 +77,8 @@ Can read state (no primes). Used for derived values and invariants.
 
 ```text
 val totalBalance =
-  ADDRESSES.fold(0, (sum, a) => sum + if (balances.contains(a)) balances.get(a) else 0)
-def balanceOf(addr: Address): int = if (balances.contains(addr)) balances.get(addr) else 0
+  ADDRESSES.fold(0, (sum, a) => sum + if (balances.keys().contains(a)) balances.get(a) else 0)
+def balanceOf(addr: Address): int = if (balances.keys().contains(addr)) balances.get(addr) else 0
 ```
 
 ### action
@@ -132,7 +133,7 @@ All conditions must hold and all updates apply atomically.
 
 ```text
 action transfer(from: Address, receiver: Address, amount: int): bool = all {
-  balances.contains(from),                  // guard
+  balances.keys().contains(from),           // guard
   balances.get(from) >= amount,             // guard
   amount > 0,                               // guard
   balances' = balances                      // update
@@ -241,6 +242,9 @@ module BankTest {
 a + b, a - b, a * b, a / b, a % b   // Arithmetic
 a == b, a != b                        // Equality
 a < b, a <= b, a > b, a >= b         // Comparison
+a ^ b                                // Exponentiation (right-associative)
+// Non-infix aliases (useful as higher-order function arguments):
+// iadd, isub, imul, idiv, imod, ipow, ilt, igt, ilte, igte
 i.to(j)                              // Range set: {i, i+1, ..., j}
 ```
 
@@ -268,6 +272,13 @@ s.size()                             // Cardinality
 s.oneOf()                            // Nondeterministic choice (in nondet)
 s.powerset()                         // Power set
 s.flatten()                          // Flatten Set[Set[T]] -> Set[T]
+s.subseteq(t)                        // Subset test: s ⊆ t
+e.in(S)                              // Membership check (same as S.contains(e))
+s.chooseSome()                       // Nondeterministic choice (usable outside nondet)
+s.getOnlyElement()                   // Extract element from a singleton set
+s.isFinite()                         // Test whether s is finite
+s.allLists()                         // All finite lists with elements from s
+s.allListsUpTo(n)                    // All lists with elements from s, up to length n
 ```
 
 ### List
@@ -284,6 +295,9 @@ l.indices()                          // Set of valid indices
 l.foldl(init, (acc, x) => ...)       // Left fold
 l.select(x => predicate)             // Filter
 l.slice(from, to)                    // Sublist [from, to)
+l[i]                                 // Element at index i (same as l.nth(i))
+l.replaceAt(i, e)                    // New list with element at index i replaced by e
+range(start, end)                    // List [start, start+1, ..., end-1]
 ```
 
 ### Map
@@ -291,13 +305,15 @@ l.slice(from, to)                    // Sublist [from, to)
 ```text
 Map("a" -> 1, "b" -> 2)              // Literal
 m.get(key)                           // Get (fails if missing!)
-m.contains(key)                      // Key exists
-if (m.contains(key)) m.get(key) else default
+m.keys().contains(key)               // Key exists
+if (m.keys().contains(key)) m.get(key) else default
 m.set(key, value)                    // Update/insert (returns new map)
 m.setBy(key, f)                      // Update by function: m.setBy(k, v => v + 1)
 m.keys()                             // Set of keys
-m.mapBy(keys, k => v)                // Build map from key set
+keys.mapBy(k => v)                   // Build map from key set (keys is Set[K]; this is a Set method)
 m.put(key, value)                    // Same as set
+m.contains(key)                      // Key membership (alternative to m.keys().contains(key))
+f[e]                                 // Lookup by bracket syntax (same as f.get(e))
 ```
 
 ### Temporal (for verification)
@@ -306,7 +322,15 @@ m.put(key, value)                    // Same as set
 always(p)                             // p holds in all states
 eventually(p)                         // p holds in some future state
 next(p)                               // p holds in the next state
-enabled(action)                       // action's guards are satisfied
+p.leadsTo(q)                          // Whenever p holds, q eventually holds (v0.32.0)
+enabled(action)                       // action's guards are satisfied in current state
+weakFair(A, e)                        // Weak fairness: WF_e(A)
+strongFair(A, e)                      // Strong fairness: SF_e(A)
+orKeep(A, x)                          // [A]_x: A takes a step, or x is unchanged
+mustChange(A, x)                      // <A>_x: A takes a step AND x changes
+p.guarantees(q)                       // Temporal guarantee combinator
+existsConst(x => p)                   // ∃x: p (unconstrained existential)
+forallConst(x => p)                   // ∀x: p (unconstrained universal)
 ```
 
 ## Run Traces (Tests)
@@ -326,7 +350,7 @@ run myTest =
 ```text
 // Safe balance lookup (nested map)
 pure def getBalance(bals: Address -> (Denom -> int), addr: Address, denom: Denom): int =
-  if (bals.contains(addr) and bals.get(addr).contains(denom))
+  if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
     bals.get(addr).get(denom)
   else
     0
@@ -339,4 +363,52 @@ nondet amount = 1.to(MAX_AMOUNT).oneOf()
 
 // Tuple destructuring
 val (x, y) = myTuple
+```
+
+## Tuples and Cartesian Products
+
+```text
+tuples(S1, S2, S3)                   // Cartesian product S1 × S2 × S3 → Set[(T1,T2,T3)]
+t._1, t._2, ..., t._50              // Tuple component access (1-indexed)
+```
+
+## Case Expressions
+
+Pattern matching with a required default case:
+
+```text
+case (
+  | condition1 -> expr1
+  | condition2 -> expr2
+  | _          -> default_expr       // Default branch is mandatory
+)
+```
+
+## Assert (Action Mode)
+
+```text
+assert(condition)                    // Evaluates condition; reports error if false
+```
+
+## Run Trace Repetition
+
+```text
+n.reps(i => A(i))                    // Repeat action A n times (i = step index 0..n-1)
+n.reps(_ => A)                       // Repeat action A n times (ignoring index)
+```
+
+## Module Instance Qualified Names
+
+When importing with `as Name`, access definitions via the `::` separator:
+
+```text
+module BankTest {
+  import BankModule(
+    ADDRESSES = Set("alice", "bob"),
+    DENOMS = Set("uatom"),
+  ) as Bank
+
+  // Access via qualified name
+  val aliceBalance = Bank::balances
+}
 ```
