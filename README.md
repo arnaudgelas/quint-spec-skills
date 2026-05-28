@@ -1,10 +1,10 @@
 # quint-spec-skill
 
-An AI skill for building formal [Quint](https://quint-lang.org/) specifications to prove correctness of software systems, distributed protocols, and complex stateful logic.
+An AI skill for building formal [Quint](https://quint.sh/) specifications to model, test, simulate, and verify properties of software systems, distributed protocols, and complex stateful logic.
 
 ## Overview
 
-When activated, this skill guides an AI agent through a rigorous 13-phase workflow to build, test, and formally verify system specifications, and bridge them to the actual code:
+When activated, this skill guides an AI agent through a rigorous workflow to build, test, and formally verify system specifications, then bridge the model to actual code where useful:
 
 1.  **System/Protocol Analysis** - Extract state, participants, messages, and transitions.
 2.  **Domain Modeling** - Define precise types using sum types, records, and aliases.
@@ -40,7 +40,7 @@ Known integration patterns:
 ### 1. Prerequisites
 
 You must have the Quint toolchain installed on your machine for the agent to run simulations and verification.
-Use the canonical CLI manual for command/flag behavior: https://quint-lang.org/docs/quint
+Use the canonical CLI manual for command/flag behavior: https://quint.sh/docs/quint
 
 ```bash
 # Install Quint CLI
@@ -156,7 +156,7 @@ skills/quint-spec/
 
 ## References
 
-- [Quint Language](https://quint-lang.org/)
+- [Quint Language](https://quint.sh/)
 - [Quint GitHub](https://github.com/informalsystems/quint)
 - [Apalache Model Checker](https://apalache-mc.org/)
 

@@ -10,6 +10,18 @@
     },
     "cliCommandSource": "local-cli",
     "cliCommands": ["compile", "docs", "parse", "repl", "run", "test", "typecheck", "verify"],
+    "cliCommandsDocumented": [
+      "compile",
+      "indent",
+      "lint",
+      "parse",
+      "repl",
+      "run",
+      "test",
+      "typecheck",
+      "verify"
+    ],
+    "cliCommandsDocumentedFuture": ["indent", "lint"],
     "cliCommandsFromDocs": [
       "compile",
       "indent",
@@ -31,13 +43,23 @@
       "typecheck",
       "verify"
     ],
-    "cliDocsLastUpdated": "October 17, 2025",
-    "latestVersion": "0.31.0",
-    "localCliSource": "./node_modules/.bin/quint"
+    "cliCommandsImplemented": [
+      "compile",
+      "docs",
+      "parse",
+      "repl",
+      "run",
+      "test",
+      "typecheck",
+      "verify"
+    ],
+    "cliDocsLastUpdated": "April 9, 2026",
+    "latestVersion": "0.32.0",
+    "localCliSource": "node_modules/.bin/quint"
   },
   "sources": {
     "apalacheJvmDocs": "https://apalache-mc.org/docs/apalache/installation/jvm.html",
-    "quintCliDocs": "https://quint-lang.org/docs/quint",
+    "quintCliDocs": "https://quint.sh/docs/quint",
     "quintNpmLatest": "https://registry.npmjs.org/@informalsystems/quint/latest"
   }
 }

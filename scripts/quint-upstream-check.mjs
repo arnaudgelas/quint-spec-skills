@@ -44,7 +44,7 @@ const paths = {
 }
 
 const urls = {
-  quintCliDocs: 'https://quint-lang.org/docs/quint',
+  quintCliDocs: 'https://quint.sh/docs/quint',
   quintNpmLatest: 'https://registry.npmjs.org/@informalsystems/quint/latest',
   apalacheJvmDocs: 'https://apalache-mc.org/docs/apalache/installation/jvm.html',
 }
@@ -181,13 +181,13 @@ function runLocalQuintHelp() {
     encoding: 'utf8',
   })
   if (result.status !== 0) {
-    return { available: false, commands: [], source: localBin }
+    return { available: false, commands: [], source: path.relative(repoRoot, localBin) }
   }
 
   return {
     available: true,
     commands: parseCliCommandsFromHelpText(result.stdout),
-    source: localBin,
+    source: path.relative(repoRoot, localBin),
   }
 }
 
@@ -308,6 +308,9 @@ async function fetchSnapshot() {
     quint: {
       latestVersion: npmData.version,
       cliCommands: localCliCommands,
+      cliCommandsImplemented: localCliCommands,
+      cliCommandsDocumented: docsCommands,
+      cliCommandsDocumentedFuture: commandDiff.onlyInDocs,
       cliCommandsFromDocs: docsCommands,
       cliCommandsFromLocalCli: localCliCommands,
       cliCommandDiscrepancies: commandDiff,
