@@ -25,6 +25,7 @@ const includeUnlabeled = args.has('--include-unlabeled')
 const includeAll = args.has('--all')
 const strictLabels = args.has('--strict-labels')
 const typecheck = args.has('--typecheck')
+const allowedLabels = new Set(['executable', 'illustrative'])
 
 if (args.has('--help')) {
   console.log(
@@ -83,6 +84,14 @@ function extractQuintBlocks(content) {
       .split(/\s+/)
       .map((label) => label.trim().toLowerCase())
       .filter(Boolean)
+
+    const unknownLabels = labels.filter((label) => !allowedLabels.has(label))
+    if (unknownLabels.length > 0) {
+      throw new Error(`Unknown Quint fence label(s): ${unknownLabels.join(', ')}`)
+    }
+    if (labels.includes('executable') && labels.includes('illustrative')) {
+      throw new Error('Quint fence cannot be both executable and illustrative')
+    }
 
     let kind = 'unlabeled'
     if (labels.includes('executable')) kind = 'executable'

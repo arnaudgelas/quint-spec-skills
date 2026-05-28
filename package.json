@@ -15,10 +15,11 @@
     "validate:references": "node scripts/validate-reference-governance.mjs",
     "validate:quint": "node scripts/validate-quint-snippets.mjs",
     "validate:quint:typecheck": "node scripts/validate-quint-snippets.mjs --typecheck --strict-labels",
-    "validate:quint:all": "node scripts/validate-quint-snippets.mjs --all --strict-labels"
+    "validate:quint:all": "node scripts/validate-quint-snippets.mjs --all --strict-labels",
+    "validate:quint:all:typecheck": "node scripts/validate-quint-snippets.mjs --all --typecheck --strict-labels"
   },
   "devDependencies": {
-    "@informalsystems/quint": "0.31.0",
+    "@informalsystems/quint": "0.32.0",
     "cheerio": "^1.0.0",
     "eslint": "^9.0.0",
     "globals": "^17.4.0",
