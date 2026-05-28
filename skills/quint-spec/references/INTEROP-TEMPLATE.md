@@ -139,23 +139,50 @@ module ICS20 {
     acks' = acks.union(Set((packet, AckSuccess))),
   }
 
-  // Timeout: return escrowed tokens to sender
-  action timeoutPacket(srcChain: ChainId, packet: Packet): bool = all {
+  // Timeout: return escrowed tokens to sender.
+  // Per ICS-04, timeout is triggered when the DESTINATION chain height has passed
+  // packet.timeoutHeight. The source chain processes the refund once that is proved.
+  action timeoutPacket(srcChain: ChainId, dstChain: ChainId, packet: Packet): bool = all {
     inflight.contains(packet),
-    val state = chains.get(srcChain)
-    // Destination chain height has passed timeout
-    state.height >= packet.timeoutHeight,
-    // Return escrowed tokens
+    val srcState = chains.get(srcChain)
+    val dstState = chains.get(dstChain)
+    dstState.height >= packet.timeoutHeight,
+    // Return escrowed tokens to original sender on the source chain
     val d = packet.data
-    val newState = {
-      ...state,
-      balances: addBalance(state.balances, d.sender, d.denom, d.amount),
-      escrow: state.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
+    val newSrcState = {
+      ...srcState,
+      balances: addBalance(srcState.balances, d.sender, d.denom, d.amount),
+      escrow: srcState.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
     }
-    chains' = chains.set(srcChain, newState),
+    chains' = chains.set(srcChain, newSrcState),
     inflight' = inflight.exclude(Set(packet)),
     acks' = acks,
   }
+
+  // Process acknowledgement: on success escrow remains (backing destination vouchers);
+  // on error refund escrowed tokens to the original sender on the source chain.
+  action processAck(srcChain: ChainId, packet: Packet, ack: Ack): bool =
+    match ack {
+      | AckSuccess => all {
+          acks.contains((packet, AckSuccess)),
+          chains' = chains,
+          acks' = acks.exclude(Set((packet, AckSuccess))),
+          inflight' = inflight,
+        }
+      | AckError(_) => all {
+          acks.contains((packet, ack)),
+          val state = chains.get(srcChain)
+          val d = packet.data
+          val newState = {
+            ...state,
+            balances: addBalance(state.balances, d.sender, d.denom, d.amount),
+            escrow: state.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
+          }
+          chains' = chains.set(srcChain, newState),
+          acks' = acks.exclude(Set((packet, ack))),
+          inflight' = inflight,
+        }
+    }
 
   // Advance block height
   action advanceHeight(chain: ChainId): bool = all {
@@ -178,10 +205,15 @@ module ICS20 {
       // Nondeterministically pick a packet to receive or timeout
       if (inflight.size() > 0) {
         nondet packet = inflight.oneOf()
+        nondet dstChain = CHAINS.oneOf()
         any {
           recvPacket(chain, packet),
-          timeoutPacket(chain, packet),
+          timeoutPacket(chain, dstChain, packet),
         }
+      } else all { chains' = chains, inflight' = inflight, acks' = acks },
+      if (acks.size() > 0) {
+        nondet ackPair = acks.oneOf()
+        processAck(chain, ackPair._1, ackPair._2)
       } else all { chains' = chains, inflight' = inflight, acks' = acks },
       advanceHeight(chain),
     }
@@ -247,7 +279,7 @@ module ThresholdBridge {
   var executed: Set[int]  // Nonces of executed messages
 
   def signers(msg: Message): Set[Validator] =
-    if (signatures.contains(msg)) signatures.get(msg) else Set()
+    if (signatures.keys().contains(msg)) signatures.get(msg) else Set()
 
   action sign(validator: Validator, msg: Message): bool = all {
     VALIDATORS.contains(validator),
