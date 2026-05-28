@@ -1,10 +1,11 @@
 ---
 name: quint-spec
 description: >
-  Build formal Quint specifications to prove correctness of any software system,
-  distributed protocol, or complex logic. Use this skill when a user mentions
-  "quint", "formal spec", "prove correctness", "model check", "specify protocol",
-  "invariant", "state machine", "safety property", or wants to verify system logic.
+  Build formal Quint specifications to model, test, simulate, and verify
+  properties of software systems, distributed protocols, or complex logic. Use
+  this skill when a user mentions "quint", "formal spec", "model check",
+  "specify protocol", "invariant", "state machine", "safety property", or
+  wants to verify system logic.
 metadata:
   author: zmanian
   version: 0.2.0
@@ -15,18 +16,19 @@ metadata:
 ## Overview
 
 This skill guides you through building formal specifications in **Quint** -- a modern
-specification language from Informal Systems that compiles to TLA+ for model checking
-via Apalache. Use this skill to:
+specification language, originally developed by Informal Systems, that can be
+checked with Apalache and TLC. Use this skill to:
 
-- Model system state machines and verify safety/liveness properties
-- Prove correctness of distributed algorithms, business workflows, and protocols
+- Model system state machines and verify stated safety/liveness properties
+- Expose bugs and invalid assumptions in distributed algorithms, business workflows, and protocols
 - Find edge cases in message flows, resource allocation, and concurrent systems
 - Generate executable test traces from formal models
 - Catch bugs _before_ implementation by exploring the full state space
 
-**When to activate:** User asks to specify, model, verify, or prove correctness of any
-system logic -- including distributed systems (consensus, messaging), business processes
-(workflows, auctions), DeFi (AMMs, lending), or cross-chain interop (IBC, bridges).
+**When to activate:** User asks to specify, model, model-check, or verify properties
+of system logic -- including distributed systems (consensus, messaging), business
+processes (workflows, auctions), DeFi (AMMs, lending), or cross-chain interop
+(IBC, bridges).
 
 ## Prerequisites
 
@@ -43,15 +45,17 @@ quint --version
 ```
 
 Use `references/TOOLCHAIN.md` for command examples, and prefer the canonical
-CLI manual for changing flags/defaults: https://quint-lang.org/docs/quint
+CLI manual for changing flags/defaults: https://quint.sh/docs/quint
 
 For syntax-validated template modules, see `references/EXECUTABLE-EXAMPLES.md`.
 
 ## Workflow
 
-Follow these 13 phases sequentially. Each phase builds on the previous one. Phases 1–9
-are always required; Phases 10–13 are optional advanced steps. Do not skip required
-phases -- incomplete models produce misleading verification results.
+Use these phases as a risk-based workflow, not as ceremony. For small tasks, produce a
+minimal executable model quickly, then iterate through testing, simulation, and
+verification. For protocol reviews, audits, or implementation-linked work, carry the
+model through mapping and model-based testing. Incomplete models can produce
+misleading results, so state all assumptions and bounds explicitly.
 
 ### Phase 1: System/Protocol Analysis
 
@@ -78,7 +82,8 @@ source code. Produce a structured summary before writing any Quint.
 | Properties  | id_uniqueness, eventually_terminal_state      |
 ```
 
-Ask the user to confirm the analysis before proceeding.
+Ask the user to confirm the analysis only when the requirements are ambiguous or the
+modeling choice would materially change the result.
 
 ### Phase 2: Domain Modeling
 
@@ -121,7 +126,7 @@ must be declared with `var`. Immutable protocol parameters use `const` or `pure 
 
 - One module per logical component (e.g., `BankModule`, `PoolModule`, `IntentModule`)
 - Declare all state variables with `var`
-- Define `val init` that sets ALL variables to valid starting values
+- Define `action init` that sets ALL variables to valid starting values
 - Use `const` for protocol parameters that vary between instances
 - Consider ghost variables for verification (variables that track properties but don't affect protocol logic)
 
@@ -171,7 +176,7 @@ pure def balanceOf(
   addr: Address,
   denom: Denom,
 ): Amount =
-  if (bals.contains(addr) and bals.get(addr).contains(denom))
+  if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
     bals.get(addr).get(denom)
   else
     0
@@ -227,13 +232,13 @@ pure def balanceOf(
   addr: Address,
   denom: Denom,
 ): Amount =
-  if (bals.contains(addr) and bals.get(addr).contains(denom))
+  if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
     bals.get(addr).get(denom)
   else
     0
 
 pure def supplyOf(supply: Denom -> Amount, denom: Denom): Amount =
-  if (supply.contains(denom)) supply.get(denom) else 0
+  if (supply.keys().contains(denom)) supply.get(denom) else 0
 
 // Conservation: total supply matches sum of all balances
 val balancesConserved = DENOMS.forall(d =>
@@ -324,8 +329,10 @@ quint verify --invariant=balancesConserved --max-steps=10 spec.qnt
 4. If modeling error: fix the spec (missing guard, wrong frame condition)
 5. If real bug: report to the user with the minimal trace
 
-**False-invariant verification:** Run `quint run --invariant=noTransfersEverHappen` and
-confirm it finds a violation. If it doesn't, the model's `step` action is too constrained.
+**Coverage witnesses:** Prefer `quint run --witnesses=noTransfersEverHappen` to measure
+whether expected states are reached. For a hard reachability check, run
+`quint run --invariant=noTransfersEverHappen` and confirm it finds a violation. If it
+doesn't, the model's `step` action may be too constrained.
 
 ### Phase 8: Implementation Mapping
 
@@ -344,7 +351,7 @@ Use the verified model as the source of truth for testing the actual implementat
 **1. Trace Validation (Test Runner Generation):**
 When requested, generate a custom test harness/runner for the user's stack (Foundry, Go, Rust, etc.) from scratch.
 
-- Export traces in ITF format: `quint run --out-itf=trace.json spec.qnt` or counterexamples with `quint verify --out-itf=bug.json spec.qnt`.
+- Export traces in ITF format with MBT metadata: `quint run --mbt --out-itf=trace_{seq}.itf.json spec.qnt` or counterexamples with `quint verify --out-itf=bug.itf.json spec.qnt`.
 - The runner must parse the JSON trace, initialize the implementation state, execute the actions step-by-step, and assert the implementation state matches the Quint state at each step.
 
 **2. Differential Fuzzing (Oracle):**
@@ -356,14 +363,15 @@ Prove that a low-level **Concrete Model** correctly implements a high-level **Ab
 
 - Define an Abstract Model for core business logic.
 - Define a Concrete Model with implementation details (e.g., relayers, pending states).
-- Create a **Refinement Mapping** from concrete to abstract state and prove correctness.
+- Create a **Refinement Mapping** from concrete to abstract state and verify refinement properties.
 
 ### Phase 11: Liveness & Fairness (Optional - Advanced)
 
 Prove that "something good _eventually_ happens" using temporal logic.
 
-- Add **Fairness Constraints** (Weak/Strong) to actions.
-- Define `temporal` properties using `eventually`, `always`, and `until`.
+- Add **Fairness Constraints** to actions using `weakFair(A, e)` (action continuously enabled → eventually taken) and `strongFair(A, e)` (action infinitely often enabled → eventually taken).
+- Define `temporal` properties using `eventually`, `always`, `leadsTo` (v0.32.0), and `until`.
+- Verify with `quint verify --temporal=myLivenessProp --max-steps=20 spec.qnt`.
 - Verify properties like **Deadlock-freedom** and **Message-delivery-guarantees**.
 
 ### Phase 12: Spec-Driven Boilerplate Generation
@@ -380,7 +388,7 @@ Automatically generate **Mermaid.js** diagrams to turn formal specs into live do
 - Use state diagrams to visualize state machines (`Status` sum types).
 - Use sequence diagrams to visualize multi-component message passing.
 
-See `references/ADVANCED-TOPICS.md` for patterns and examples.
+See `references/PATTERNS.md` for design patterns and `references/ADVANCED-TOPICS.md` for refinement modeling, liveness, and code generation guidance.
 
 ## Domain-Specific Guidance
 
@@ -435,7 +443,7 @@ See `references/INTENT-TEMPLATE.md` for starter templates.
 
 ## Key Patterns
 
-See `references/PATTERNS.md` for 15+ proven patterns extracted from production Quint
+See `references/PATTERNS.md` for 18+ proven patterns extracted from production Quint
 specifications, including:
 
 - Parameterized module + concrete instance
@@ -493,4 +501,14 @@ specifications, including:
 
 **Symptom:** Runtime error or unexpected behavior when accessing missing keys.
 **Cause:** `Map.get(key)` fails if key doesn't exist.
-**Fix:** Check `.contains(key)` before `.get(key)` and create helper functions for defaults. For nested maps, prefer a helper like `balanceOf(bals, addr, denom)`.
+**Fix:** Check `map.keys().contains(key)` before `.get(key)` and create helper functions for defaults. For nested maps, prefer a helper like `balanceOf(bals, addr, denom)`.
+
+## Modeling Limits
+
+Quint checks the model you write, not the implementation or the real world directly.
+Keep these limits explicit in every nontrivial spec:
+
+- Bounds: finite sets, ranges, trace depth, and any constants chosen for tractability.
+- Abstractions: behavior intentionally omitted from the model, such as gas, timing, I/O, failures, or cryptography.
+- Fairness: assumptions needed for liveness, such as messages eventually being delivered or enabled actions eventually being scheduled.
+- Refinement gap: how Quint state/actions map to implementation state/functions, and what is not covered by that mapping.
