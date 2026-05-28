@@ -92,22 +92,22 @@ explicitly when reproducibility matters.
 
 **Key flags:**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--invariant=<name>` | `"true"` | Invariant expression or definition name to check |
-| `--witnesses <n1> <n2>` | `[]` | Space-separated witness names; reports when a satisfying state is found |
-| `--max-samples=N` | `10000` | Maximum simulation runs |
-| `--max-steps=N` | `20` | Maximum steps per trace |
-| `--n-traces=N` | `1` | Number of traces to generate |
-| `--seed=<str>` | — | Random seed for reproducible runs |
-| `--backend=<name>` | see note | `"rust"` or `"typescript"` |
-| `--out-itf=<path>` | — | Write trace to file in Informal Trace Format |
-| `--mbt` | `false` | Embed model-based testing metadata in the ITF trace |
-| `--hide <v1> <v2>` | `[]` | Variables to hide from trace output |
+| Flag                    | Default  | Description                                                             |
+| ----------------------- | -------- | ----------------------------------------------------------------------- |
+| `--invariant=<name>`    | `"true"` | Invariant expression or definition name to check                        |
+| `--witnesses <n1> <n2>` | `[]`     | Space-separated witness names; reports when a satisfying state is found |
+| `--max-samples=N`       | `10000`  | Maximum simulation runs                                                 |
+| `--max-steps=N`         | `20`     | Maximum steps per trace                                                 |
+| `--n-traces=N`          | `1`      | Number of traces to generate                                            |
+| `--seed=<str>`          | —        | Random seed for reproducible runs                                       |
+| `--backend=<name>`      | see note | `"rust"` or `"typescript"`                                              |
+| `--out-itf=<path>`      | —        | Write trace to file in Informal Trace Format                            |
+| `--mbt`                 | `false`  | Embed model-based testing metadata in the ITF trace                     |
+| `--hide <v1> <v2>`      | `[]`     | Variables to hide from trace output                                     |
 
 > **`--witnesses` vs `--invariant` for reachability:**  
-> `--witnesses w` reports when a state *satisfying* `w` is found (confirms reachability).  
-> `--invariant=w` reports when `w` is *violated* (same result, opposite framing). Both approaches are valid; `--witnesses` is more idiomatic for positive reachability checks.
+> `--witnesses w` reports when a state _satisfying_ `w` is found (confirms reachability).  
+> `--invariant=w` reports when `w` is _violated_ (same result, opposite framing). Both approaches are valid; `--witnesses` is more idiomatic for positive reachability checks.
 
 ### quint verify
 
@@ -127,30 +127,33 @@ explicit state enumeration is useful.
 
 **Key flags:**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--invariant=<name>` | — | Invariant to check (comma-separated for multiple) |
-| `--inductive-invariant=<name>` | — | **Apalache only.** Proves `I ∧ step ⇒ I'` (inductive invariant). Use when bounded checking is insufficient. |
-| `--temporal=<name>` | — | Temporal property to check (comma-separated for multiple) |
-| `--max-steps=N` | `10` | Bounded model checking depth (Apalache) |
-| `--random-transitions` | `false` | **Apalache only.** Random symbolic simulation |
-| `--backend=<name>` | `"apalache"` | `"apalache"` or `"tlc"` |
-| `--out-itf=<path>` | — | Write counterexample trace to ITF file (Apalache only) |
-| `--apalache-config=<path>` | — | Path to additional Apalache JSON config |
-| `--tlc-config=<path>` | — | Path to TLC JSON config file |
+| Flag                           | Default      | Description                                                                                                 |
+| ------------------------------ | ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `--invariant=<name>`           | —            | Invariant to check (comma-separated for multiple)                                                           |
+| `--inductive-invariant=<name>` | —            | **Apalache only.** Proves `I ∧ step ⇒ I'` (inductive invariant). Use when bounded checking is insufficient. |
+| `--temporal=<name>`            | —            | Temporal property to check (comma-separated for multiple)                                                   |
+| `--max-steps=N`                | `10`         | Bounded model checking depth (Apalache)                                                                     |
+| `--random-transitions`         | `false`      | **Apalache only.** Random symbolic simulation                                                               |
+| `--backend=<name>`             | `"apalache"` | `"apalache"` or `"tlc"`                                                                                     |
+| `--out-itf=<path>`             | —            | Write counterexample trace to ITF file (Apalache only)                                                      |
+| `--apalache-config=<path>`     | —            | Path to additional Apalache JSON config                                                                     |
+| `--tlc-config=<path>`          | —            | Path to TLC JSON config file                                                                                |
 
 **Inductive invariant example:**
+
 ```bash
 # Prove that myInvariant is inductive (no bounded depth needed)
 quint verify --inductive-invariant=myInvariant spec.qnt
 ```
 
 **Temporal property example:**
+
 ```bash
 quint verify --temporal=eventuallySettled --max-steps=20 spec.qnt
 ```
 
 **When to use TLC vs Apalache:**
+
 - **Apalache** (default): symbolic bounded checking; handles unbounded integers; preferred for most specs.
 - **TLC**: explicit state enumeration; faster for small finite-state models; use when Apalache times out on tractable finite models.
 
