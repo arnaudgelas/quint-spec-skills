@@ -10,18 +10,8 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 Core utilities used in most specifications. Adapted from the Quint standard
 library and Informal Systems' production specs.
 
-```text
+```quint illustrative
 module basicSpells {
-  /// Option type: represents a value that may or may not exist
-  type Option[T] = Some(T) | None
-
-  /// Unwrap an Option, returning a default if None
-  pure def unwrapOr(opt: Option[int], default: int): int =
-    match opt {
-      | Some(v) => v
-      | None => default
-    }
-
   /// Require: assertion helper. Returns the condition itself.
   /// Use in guards: `require(amount > 0)`
   pure def require(cond: bool): bool = cond
@@ -89,7 +79,7 @@ module defiSpells {
     addr: str,
     denom: str
   ): int =
-    if (balances.contains(addr) and balances.get(addr).contains(denom))
+    if (balances.keys().contains(addr) and balances.get(addr).keys().contains(denom))
       balances.get(addr).get(denom)
     else
       0
@@ -101,8 +91,8 @@ module defiSpells {
     denom: str,
     delta: int
   ): str -> (str -> int) = {
-    val addrBals = if (balances.contains(addr)) balances.get(addr) else Map()
-    val current = if (addrBals.contains(denom)) addrBals.get(denom) else 0
+    val addrBals = if (balances.keys().contains(addr)) balances.get(addr) else Map()
+    val current = if (addrBals.keys().contains(denom)) addrBals.get(denom) else 0
     balances.set(addr, addrBals.set(denom, current + delta))
   }
 
