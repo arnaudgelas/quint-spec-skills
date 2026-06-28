@@ -92,18 +92,18 @@ explicitly when reproducibility matters.
 
 **Key flags:**
 
-| Flag                    | Default  | Description                                                             |
-| ----------------------- | -------- | ----------------------------------------------------------------------- |
-| `--invariant=<name>`    | `"true"` | Invariant expression or definition name to check                        |
-| `--witnesses <n1> <n2>` | `[]`     | Space-separated witness names; reports when a satisfying state is found |
-| `--max-samples=N`       | `10000`  | Maximum simulation runs                                                 |
-| `--max-steps=N`         | `20`     | Maximum steps per trace                                                 |
-| `--n-traces=N`          | `1`      | Number of traces to generate                                            |
-| `--seed=<str>`          | —        | Random seed for reproducible runs                                       |
-| `--backend=<name>`      | see note | `"rust"` or `"typescript"`                                              |
-| `--out-itf=<path>`      | —        | Write trace to file in Informal Trace Format                            |
-| `--mbt`                 | `false`  | Embed model-based testing metadata in the ITF trace                     |
-| `--hide <v1> <v2>`      | `[]`     | Variables to hide from trace output                                     |
+| Flag                    | Default  | Description                                                                 |
+| ----------------------- | -------- | --------------------------------------------------------------------------- |
+| `--invariant=<name>`    | `"true"` | Invariant expression or definition name to check                            |
+| `--witnesses <n1> <n2>` | `[]`     | Space-separated witness names; reports when a satisfying state is found     |
+| `--max-samples=N`       | see help | Maximum simulation runs; `0.32.0` uses `1` with `--seed`, otherwise `10000` |
+| `--max-steps=N`         | `20`     | Maximum steps per trace                                                     |
+| `--n-traces=N`          | `1`      | Number of traces to generate                                                |
+| `--seed=<str>`          | —        | Random seed for reproducible runs                                           |
+| `--backend=<name>`      | see note | `"rust"` or `"typescript"`                                                  |
+| `--out-itf=<path>`      | —        | Write trace to file in Informal Trace Format                                |
+| `--mbt`                 | `false`  | Embed model-based testing metadata in the ITF trace                         |
+| `--hide <v1> <v2>`      | `[]`     | Variables to hide from trace output                                         |
 
 > **`--witnesses` vs `--invariant` for reachability:**  
 > `--witnesses w` reports when a state _satisfying_ `w` is found (confirms reachability).  
@@ -111,8 +111,9 @@ explicitly when reproducibility matters.
 
 ### quint verify
 
-Bounded exhaustive verification via Apalache, with TLC available for finite-state
-explicit-state checking.
+Bounded symbolic verification via Apalache, with TLC available for finite-state
+explicit-state checking. Do not describe a bounded Apalache run as a complete proof
+unless the bound, induction argument, or finite-state backend setup justifies it.
 
 ```bash
 quint verify --invariant=balancesConserved spec.qnt
@@ -149,7 +150,7 @@ quint verify --inductive-invariant=myInvariant spec.qnt
 **Temporal property example:**
 
 ```bash
-quint verify --temporal=eventuallySettled --max-steps=20 spec.qnt
+quint verify --backend=tlc --temporal=eventuallySettled --max-steps=20 spec.qnt
 ```
 
 **When to use TLC vs Apalache:**
@@ -178,7 +179,7 @@ quint test spec.qnt
 quint run --invariant=myInvariant --max-samples=1000 spec.qnt
 
 # 4. Verify false-invariant witnesses (confirm model isn't vacuous)
-quint run --witnesses=witnessActivity spec.qnt
+quint run spec.qnt --witnesses witnessActivity
 quint run --invariant=witnessNoActivity spec.qnt
 # For the false invariant, expected: violation found
 

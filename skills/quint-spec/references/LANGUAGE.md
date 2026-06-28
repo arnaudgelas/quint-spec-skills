@@ -41,8 +41,8 @@ p.with("reserve0", 150)              // Single-field update (alternative to spre
 ### Sum Types (Variants)
 
 ```text
-type Option[T] = Some(T) | None
-type Result[T, E] = Ok(T) | Err(E)
+type Option[a] = Some(a) | None
+type Result[a, e] = Ok(a) | Err(e)
 
 type Msg =
   | Deposit({ sender: str, amount: int })
@@ -85,7 +85,7 @@ def balanceOf(addr: Address): int = if (balances.keys().contains(addr)) balances
 
 Can read and write state (primes allowed). Represents state transitions.
 
-```text
+```quint sketch
 action deposit(sender: Address, amount: int): bool = all {
   amount > 0,
   balances' = balances.setBy(sender, b => b + amount),
@@ -97,7 +97,7 @@ action deposit(sender: Address, amount: int): bool = all {
 
 For temporal logic properties (liveness, fairness).
 
-```text
+```quint sketch
 temporal eventuallySettled = eventually(status == "settled")
 temporal alwaysConserved = always(balancesConserved)
 ```
@@ -118,7 +118,7 @@ action increment = all {
 
 **Rule:** Every action must assign ALL `var` variables. If unchanged:
 
-```text
+```quint sketch
 action incrementOnlyCounter = all {
   counter' = counter + 1,
   otherVar' = otherVar,    // Frame condition: explicitly unchanged
@@ -131,7 +131,7 @@ action incrementOnlyCounter = all {
 
 All conditions must hold and all updates apply atomically.
 
-```text
+```quint sketch
 action transfer(from: Address, receiver: Address, amount: int): bool = all {
   balances.keys().contains(from),           // guard
   balances.get(from) >= amount,             // guard
@@ -146,7 +146,7 @@ action transfer(from: Address, receiver: Address, amount: int): bool = all {
 
 Nondeterministic choice: exactly one branch is taken.
 
-```text
+```quint sketch
 action step = any {
   deposit(sender, amount),
   withdraw(sender, shares),
@@ -158,7 +158,7 @@ action step = any {
 
 Selects a value nondeterministically from a set. Model checker explores all choices.
 
-```text
+```quint sketch
 action step = {
   nondet sender = ADDRESSES.oneOf()
   nondet amount = 1.to(100).oneOf()
@@ -200,7 +200,7 @@ module BankTypes {
 
 ### Import
 
-```text
+```quint sketch
 import BankTypes.*                    // Import all from module
 import BankTypes.Address              // Import specific type
 import BankTypes as BT                // Qualified import: BT.Address
@@ -208,7 +208,7 @@ import BankTypes as BT                // Qualified import: BT.Address
 
 ### Export
 
-```text
+```quint sketch
 module Facade {
   import BankModule.*
   export BankModule.*                 // Re-export for downstream consumers
@@ -274,7 +274,7 @@ s.powerset()                         // Power set
 s.flatten()                          // Flatten Set[Set[T]] -> Set[T]
 s.subseteq(t)                        // Subset test: s ⊆ t
 e.in(S)                              // Membership check (same as S.contains(e))
-s.chooseSome()                       // Nondeterministic choice (usable outside nondet)
+s.chooseSome()                       // Deterministic choice of some element
 s.getOnlyElement()                   // Extract element from a singleton set
 s.isFinite()                         // Test whether s is finite
 s.allLists()                         // All finite lists with elements from s
@@ -307,12 +307,11 @@ Map("a" -> 1, "b" -> 2)              // Literal
 m.get(key)                           // Get (fails if missing!)
 m.keys().contains(key)               // Key exists
 if (m.keys().contains(key)) m.get(key) else default
-m.set(key, value)                    // Update/insert (returns new map)
-m.setBy(key, f)                      // Update by function: m.setBy(k, v => v + 1)
+m.put(key, value)                    // Insert or replace (returns new map)
+m.set(key, value)                    // Replace existing key; fails if key is missing
+m.setBy(key, f)                      // Update existing key by function; fails if key is missing
 m.keys()                             // Set of keys
 keys.mapBy(k => v)                   // Build map from key set (keys is Set[K]; this is a Set method)
-m.put(key, value)                    // Same as set
-m.contains(key)                      // Key membership (alternative to m.keys().contains(key))
 f[e]                                 // Lookup by bracket syntax (same as f.get(e))
 ```
 
@@ -335,7 +334,7 @@ forallConst(x => p)                   // ∀x: p (unconstrained universal)
 
 ## Run Traces (Tests)
 
-```text
+```quint sketch
 run myTest =
   init
     .then(action1(arg1, arg2))
@@ -401,7 +400,7 @@ n.reps(_ => A)                       // Repeat action A n times (ignoring index)
 
 When importing with `as Name`, access definitions via the `::` separator:
 
-```text
+```quint sketch
 module BankTest {
   import BankModule(
     ADDRESSES = Set("alice", "bob"),

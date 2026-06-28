@@ -63,7 +63,7 @@ module TokenBank {
   action mint(addr: Address, denom: Denom, amount: int): bool = all {
     amount > 0,
     val oldBalance = balanceOf(balances, addr, denom)
-    balances' = balances.set((addr, denom), oldBalance + amount),
+    balances' = balances.put((addr, denom), oldBalance + amount),
   }
 }
 ```

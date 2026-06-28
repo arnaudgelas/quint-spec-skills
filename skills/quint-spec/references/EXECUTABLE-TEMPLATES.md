@@ -27,8 +27,8 @@ module ExecutableBankTemplate {
 
   action mint(receiver: Address, denom: Denom, amount: int): bool = all {
     amount > 0,
-    balances' = balances.set((receiver, denom), balanceOf(balances, receiver, denom) + amount),
-    totalSupply' = totalSupply.set(denom, supplyOf(totalSupply, denom) + amount),
+    balances' = balances.put((receiver, denom), balanceOf(balances, receiver, denom) + amount),
+    totalSupply' = totalSupply.put(denom, supplyOf(totalSupply, denom) + amount),
   }
 
   action send(from: Address, receiver: Address, denom: Denom, amount: int): bool = all {
@@ -36,8 +36,8 @@ module ExecutableBankTemplate {
     amount > 0,
     balanceOf(balances, from, denom) >= amount,
     balances' = balances
-      .set((from, denom), balanceOf(balances, from, denom) - amount)
-      .set((receiver, denom), balanceOf(balances, receiver, denom) + amount),
+      .put((from, denom), balanceOf(balances, from, denom) - amount)
+      .put((receiver, denom), balanceOf(balances, receiver, denom) + amount),
     totalSupply' = totalSupply,
   }
 
@@ -73,7 +73,7 @@ module ExecutableWorkflowTemplate {
 
   action create(creator: str, data: str): bool = all {
     USERS.contains(creator),
-    requests' = requests.set(nextId, {
+    requests' = requests.put(nextId, {
       id: nextId,
       creator: creator,
       data: data,
@@ -87,7 +87,7 @@ module ExecutableWorkflowTemplate {
     APPROVERS.contains(approver),
     requests.keys().contains(id),
     requests.get(id).status == Pending,
-    requests' = requests.set(id, {
+    requests' = requests.put(id, {
       id: requests.get(id).id,
       creator: requests.get(id).creator,
       data: requests.get(id).data,
@@ -100,7 +100,7 @@ module ExecutableWorkflowTemplate {
   action complete(id: RequestId): bool = all {
     requests.keys().contains(id),
     requests.get(id).status == Approved,
-    requests' = requests.set(id, {
+    requests' = requests.put(id, {
       id: requests.get(id).id,
       creator: requests.get(id).creator,
       data: requests.get(id).data,
@@ -166,7 +166,7 @@ module ExecutableIntentTemplate {
     inputAmount > 0,
     minOutput > 0,
     bal(srcChain, creator, inputToken) >= inputAmount,
-    intents' = intents.set(nextIntentId, {
+    intents' = intents.put(nextIntentId, {
       id: nextIntentId,
       creator: creator,
       inputToken: inputToken,
@@ -177,8 +177,8 @@ module ExecutableIntentTemplate {
       destChain: dstChain,
       deadline: currentHeight + 10,
     }),
-    status' = status.set(nextIntentId, Pending),
-    balances' = balances.set((srcChain, creator, inputToken), bal(srcChain, creator, inputToken) - inputAmount),
+    status' = status.put(nextIntentId, Pending),
+    balances' = balances.put((srcChain, creator, inputToken), bal(srcChain, creator, inputToken) - inputAmount),
     nextIntentId' = nextIntentId + 1,
     currentHeight' = currentHeight,
   }
@@ -190,11 +190,11 @@ module ExecutableIntentTemplate {
     outputAmount >= intents.get(intentId).minOutput,
     bal(intents.get(intentId).destChain, solver, intents.get(intentId).outputToken) >= outputAmount,
     balances' = balances
-      .set(
+      .put(
         (intents.get(intentId).destChain, solver, intents.get(intentId).outputToken),
         bal(intents.get(intentId).destChain, solver, intents.get(intentId).outputToken) - outputAmount
       )
-      .set(
+      .put(
         (
           intents.get(intentId).destChain,
           intents.get(intentId).creator,
@@ -203,7 +203,7 @@ module ExecutableIntentTemplate {
         bal(intents.get(intentId).destChain, intents.get(intentId).creator, intents.get(intentId).outputToken)
           + outputAmount
       ),
-    status' = status.set(intentId, Filled),
+    status' = status.put(intentId, Filled),
     intents' = intents,
     nextIntentId' = nextIntentId,
     currentHeight' = currentHeight,
@@ -212,7 +212,7 @@ module ExecutableIntentTemplate {
   action settleIntent(intentId: IntentId, solver: Address): bool = all {
     status.keys().contains(intentId),
     status.get(intentId) == Filled,
-    balances' = balances.set(
+    balances' = balances.put(
       (
         intents.get(intentId).sourceChain,
         solver,
@@ -221,7 +221,7 @@ module ExecutableIntentTemplate {
       bal(intents.get(intentId).sourceChain, solver, intents.get(intentId).inputToken)
         + intents.get(intentId).inputAmount
     ),
-    status' = status.set(intentId, Settled),
+    status' = status.put(intentId, Settled),
     intents' = intents,
     nextIntentId' = nextIntentId,
     currentHeight' = currentHeight,
@@ -231,7 +231,7 @@ module ExecutableIntentTemplate {
     status.keys().contains(intentId),
     status.get(intentId) == Pending,
     currentHeight >= intents.get(intentId).deadline,
-    balances' = balances.set(
+    balances' = balances.put(
       (
         intents.get(intentId).sourceChain,
         intents.get(intentId).creator,
@@ -243,7 +243,7 @@ module ExecutableIntentTemplate {
         intents.get(intentId).inputToken,
       ) + intents.get(intentId).inputAmount
     ),
-    status' = status.set(intentId, Expired),
+    status' = status.put(intentId, Expired),
     intents' = intents,
     nextIntentId' = nextIntentId,
     currentHeight' = currentHeight,
@@ -305,7 +305,7 @@ module ExecutableEscrowFillSettleTemplate {
     srcAmount > 0,
     dstAmount > 0,
     amountOf(sourceBalances, sender, denom) >= srcAmount,
-    orders' = orders.set(nextOrderId, {
+    orders' = orders.put(nextOrderId, {
       id: nextOrderId,
       sender: sender,
       receiver: receiver,
@@ -314,8 +314,8 @@ module ExecutableEscrowFillSettleTemplate {
       destAmount: dstAmount,
       timeoutHeight: currentHeight + 10,
     }),
-    orderStatus' = orderStatus.set(nextOrderId, Escrowed),
-    sourceBalances' = sourceBalances.set((sender, denom), amountOf(sourceBalances, sender, denom) - srcAmount),
+    orderStatus' = orderStatus.put(nextOrderId, Escrowed),
+    sourceBalances' = sourceBalances.put((sender, denom), amountOf(sourceBalances, sender, denom) - srcAmount),
     destBalances' = destBalances,
     nextOrderId' = nextOrderId + 1,
     currentHeight' = currentHeight,
@@ -327,16 +327,16 @@ module ExecutableEscrowFillSettleTemplate {
     currentHeight < orders.get(orderId).timeoutHeight,
     amountOf(destBalances, filler, orders.get(orderId).denom) >= orders.get(orderId).destAmount,
     destBalances' = destBalances
-      .set(
+      .put(
         (filler, orders.get(orderId).denom),
         amountOf(destBalances, filler, orders.get(orderId).denom) - orders.get(orderId).destAmount
       )
-      .set(
+      .put(
         (orders.get(orderId).receiver, orders.get(orderId).denom),
         amountOf(destBalances, orders.get(orderId).receiver, orders.get(orderId).denom)
           + orders.get(orderId).destAmount
       ),
-    orderStatus' = orderStatus.set(orderId, Filled),
+    orderStatus' = orderStatus.put(orderId, Filled),
     orders' = orders,
     sourceBalances' = sourceBalances,
     nextOrderId' = nextOrderId,
@@ -346,11 +346,11 @@ module ExecutableEscrowFillSettleTemplate {
   action settle(orderId: OrderId, filler: Address): bool = all {
     orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Filled,
-    sourceBalances' = sourceBalances.set(
+    sourceBalances' = sourceBalances.put(
       (filler, orders.get(orderId).denom),
       amountOf(sourceBalances, filler, orders.get(orderId).denom) + orders.get(orderId).sourceAmount
     ),
-    orderStatus' = orderStatus.set(orderId, Settled),
+    orderStatus' = orderStatus.put(orderId, Settled),
     orders' = orders,
     destBalances' = destBalances,
     nextOrderId' = nextOrderId,
@@ -361,12 +361,12 @@ module ExecutableEscrowFillSettleTemplate {
     orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Escrowed,
     currentHeight >= orders.get(orderId).timeoutHeight,
-    sourceBalances' = sourceBalances.set(
+    sourceBalances' = sourceBalances.put(
       (orders.get(orderId).sender, orders.get(orderId).denom),
       amountOf(sourceBalances, orders.get(orderId).sender, orders.get(orderId).denom)
         + orders.get(orderId).sourceAmount
     ),
-    orderStatus' = orderStatus.set(orderId, Refunded),
+    orderStatus' = orderStatus.put(orderId, Refunded),
     orders' = orders,
     destBalances' = destBalances,
     nextOrderId' = nextOrderId,

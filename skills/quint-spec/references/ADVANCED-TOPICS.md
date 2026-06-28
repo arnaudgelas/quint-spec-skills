@@ -17,14 +17,14 @@ Refinement is the process of proving that a detailed **Concrete Model** (with im
 3. **Refinement Mapping**: Define a mapping from concrete state variables to abstract state variables.
 4. **Proof**: Use Quint to prove that every step in the Concrete model corresponds to a valid step (or a stutter/no-op) in the Abstract model.
 
-```text
+```quint sketch
 // Abstract Model: simple atomic balance transfer
 module AbstractBank {
   const USERS: Set[str]
   var balances: str -> int
 
   pure def getBalance(addr: str): int =
-    if (balances.contains(addr)) balances.get(addr) else 0
+    if (balances.keys().contains(addr)) balances.get(addr) else 0
 
   val balancesNonNegative = USERS.forall(u => getBalance(u) >= 0)
 
@@ -46,7 +46,7 @@ module ConcreteBank {
   var pending: Set[Transfer]   // In-flight transfers (funds already deducted from vault)
 
   pure def vaultOf(addr: str): int =
-    if (vault.contains(addr)) vault.get(addr) else 0
+    if (vault.keys().contains(addr)) vault.get(addr) else 0
 
   // Refinement mapping: abstract balance = vault minus outgoing in-flight escrow
   pure def abstractBalance(addr: str): int =
@@ -72,7 +72,7 @@ To prove liveness, you often need to assume **Fairness**: that if an action is e
 - **Weak Fairness** (`weakFair(A, e)`): If action `A` is _continuously_ enabled (on variable expression `e`), it must eventually occur.
 - **Strong Fairness** (`strongFair(A, e)`): If action `A` is _infinitely often_ enabled, it must eventually occur.
 
-```text
+```quint sketch
 temporal fairStep = weakFair(step, x)
 ```
 
@@ -80,7 +80,7 @@ temporal fairStep = weakFair(step, x)
 
 Use `temporal`, `always`, `eventually`, and `leadsTo` (v0.32.0) to define liveness:
 
-```text
+```quint sketch
 // Leads-to: whenever a Pending intent exists, it eventually resolves
 temporal intentsResolve =
   always(
@@ -106,7 +106,7 @@ temporal intentsResolveShort =
 **Verify temporal properties:**
 
 ```bash
-quint verify --temporal=intentsResolve --max-steps=20 spec.qnt
+quint verify --backend=tlc --temporal=intentsResolve --max-steps=20 spec.qnt
 ```
 
 ---
@@ -122,7 +122,7 @@ Once a Quint specification is verified, use it to generate the **Interface** or 
 
 **Example: Quint to Solidity**
 
-```text
+```quint sketch
 // Quint Action
 action deposit(sender: Address, amount: int): bool = all {
   amount > 0,

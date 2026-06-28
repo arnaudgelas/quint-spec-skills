@@ -8,11 +8,11 @@ Once a Quint specification is verified, the next critical step is ensuring the a
 
 Quint provides three complementary commands for testing and verification, each serving a distinct purpose:
 
-| Command        | Mode        | Best For                                                                  |
-| -------------- | ----------- | ------------------------------------------------------------------------- |
-| `quint test`   | Named tests | `run` blocks — fast unit tests, regression suites, reachability witnesses |
-| `quint run`    | Randomized  | Nondeterministic exploration — finding unexpected states via simulation   |
-| `quint verify` | Exhaustive  | Complete model checking via Apalache — bounded proof of invariants        |
+| Command        | Mode        | Best For                                                                             |
+| -------------- | ----------- | ------------------------------------------------------------------------------------ |
+| `quint test`   | Named tests | `run` blocks — fast unit tests, regression suites, reachability witnesses            |
+| `quint run`    | Randomized  | Nondeterministic exploration — finding unexpected states via simulation              |
+| `quint verify` | Model check | Bounded checking via Apalache, or explicit-state checking with TLC for finite models |
 
 ### `quint test` — Deterministic Named Tests
 
@@ -34,7 +34,7 @@ quint test spec.qnt --match deposit
 
 **Example `run` block:**
 
-```text
+```quint sketch
 run depositWithdrawRoundTrip =
   init
     .then(deposit("alice", 100))
@@ -43,7 +43,7 @@ run depositWithdrawRoundTrip =
     .expect(totalAssets == 0)
 ```
 
-**Workflow order:** Use `quint test` first for fast feedback, then `quint run` to explore, then `quint verify` to prove invariants exhaustively.
+**Workflow order:** Use `quint test` first for fast feedback, then `quint run` to explore, then `quint verify` for bounded checks, inductive-invariant checks, or finite-state TLC runs.
 
 ---
 

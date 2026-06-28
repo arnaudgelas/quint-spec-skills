@@ -130,7 +130,7 @@ must be declared with `var`. Immutable protocol parameters use `const` or `pure 
 - Use `const` for protocol parameters that vary between instances
 - Consider ghost variables for verification (variables that track properties but don't affect protocol logic)
 
-```text
+```quint sketch
 module MyProtocol {
   import MyProtocolTypes.*
 
@@ -164,13 +164,13 @@ update state atomically.
 
 - Every action follows: `action name = all { guard, ...updates }`
 - Guards are boolean expressions (no primes): `balances.get(sender).get(denom) >= amount`
-- Updates assign primed variables: `balances' = balances.set(sender, ...)`
+- Updates assign primed variables: `balances' = balances.put(sender, ...)`
 - Use `all { ... }` for conjunctive (AND) composition -- all updates happen atomically
 - Use `any { ... }` for disjunctive (OR) composition -- nondeterministic choice
 - Use `nondet x = S.oneOf(); ...` for nondeterministic value selection from a set
 - Define a `step` action that combines all possible actions with `any`
 
-```text
+```quint sketch
 pure def balanceOf(
   bals: Address -> (Denom -> Amount),
   addr: Address,
@@ -276,7 +276,7 @@ documentation and sanity checks before full verification.
 - Cover happy paths, edge cases, and error paths
 - Name tests descriptively: `run transferThenBurnTest = ...`
 
-```text
+```quint sketch
 run happyPathTest =
   init
     .then(mint("alice", "uatom", 1000))
@@ -295,8 +295,9 @@ run edgeCaseZeroTransfer =
 
 ### Phase 7: Verification
 
-Run simulation first (fast, finds many bugs), then formal verification (exhaustive,
-proves properties).
+Run simulation first (fast, finds many bugs), then model checking. Treat Apalache
+checks as bounded unless you use an inductive invariant or a deliberately finite
+state space/backend configuration.
 
 **Simulation:**
 
@@ -314,7 +315,7 @@ quint run --invariant=balancesConserved --seed=42 spec.qnt
 **Formal verification:**
 
 ```bash
-# Exhaustive model checking via Apalache
+# Bounded model checking via Apalache
 quint verify --invariant=balancesConserved spec.qnt
 
 # Bounded model checking (explore up to N steps)
@@ -329,7 +330,7 @@ quint verify --invariant=balancesConserved --max-steps=10 spec.qnt
 4. If modeling error: fix the spec (missing guard, wrong frame condition)
 5. If real bug: report to the user with the minimal trace
 
-**Coverage witnesses:** Prefer `quint run --witnesses=noTransfersEverHappen` to measure
+**Coverage witnesses:** Prefer `quint run spec.qnt --witnesses noTransfersEverHappen` to measure
 whether expected states are reached. For a hard reachability check, run
 `quint run --invariant=noTransfersEverHappen` and confirm it finds a violation. If it
 doesn't, the model's `step` action may be too constrained.
@@ -371,7 +372,7 @@ Prove that "something good _eventually_ happens" using temporal logic.
 
 - Add **Fairness Constraints** to actions using `weakFair(A, e)` (action continuously enabled → eventually taken) and `strongFair(A, e)` (action infinitely often enabled → eventually taken).
 - Define `temporal` properties using `eventually`, `always`, `leadsTo` (v0.32.0), and `until`.
-- Verify with `quint verify --temporal=myLivenessProp --max-steps=20 spec.qnt`.
+- Verify with `quint verify --backend=tlc --temporal=myLivenessProp --max-steps=20 spec.qnt`.
 - Verify properties like **Deadlock-freedom** and **Message-delivery-guarantees**.
 
 ### Phase 12: Spec-Driven Boilerplate Generation

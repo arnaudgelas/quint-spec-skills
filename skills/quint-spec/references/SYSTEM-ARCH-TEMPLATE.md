@@ -38,7 +38,7 @@ module SystemArch {
     val msg = { id: msgCounter, src: src, dst: dst, payload: payload }
     inFlightMessages' = inFlightMessages.union(Set(msg)),
     msgCounter' = msgCounter + 1,
-    serviceStates' = serviceStates.set(src, "Waiting"),
+    serviceStates' = serviceStates.put(src, "Waiting"),
   }
 
   // Service receives and processes a message
@@ -50,7 +50,7 @@ module SystemArch {
       nondet msg = myMsgs.oneOf()
       all {
         // Simple state update based on message
-        serviceStates' = serviceStates.set(dst, "Processing"),
+        serviceStates' = serviceStates.put(dst, "Processing"),
         inFlightMessages' = inFlightMessages.exclude(Set(msg)),
         msgCounter' = msgCounter,
       }
@@ -60,7 +60,7 @@ module SystemArch {
   // Internal service transition
   action internalTransition(s: ServiceId): bool = all {
     serviceStates.get(s) == "Processing",
-    serviceStates' = serviceStates.set(s, "Idle"),
+    serviceStates' = serviceStates.put(s, "Idle"),
     inFlightMessages' = inFlightMessages,
     msgCounter' = msgCounter,
   }
@@ -114,22 +114,22 @@ module SharedResource {
 
   action requestLock(p: ProcessId, r: ResourceId): bool = all {
     processState.get(p) == Idle,
-    processState' = processState.set(p, Requesting),
+    processState' = processState.put(p, Requesting),
     locks' = locks,
   }
 
   action acquireLock(p: ProcessId, r: ResourceId): bool = all {
     processState.get(p) == Requesting,
     locks.get(r) == Free,
-    locks' = locks.set(r, HeldBy(p)),
-    processState' = processState.set(p, Holding),
+    locks' = locks.put(r, HeldBy(p)),
+    processState' = processState.put(p, Holding),
   }
 
   action releaseLock(p: ProcessId, r: ResourceId): bool = all {
     processState.get(p) == Holding,
     locks.get(r) == HeldBy(p),
-    locks' = locks.set(r, Free),
-    processState' = processState.set(p, Idle),
+    locks' = locks.put(r, Free),
+    processState' = processState.put(p, Idle),
   }
 
   action step = {

@@ -10,7 +10,7 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-TEMPLATES.md`.
 
 Models a process that moves through a series of states (e.g., a ticket system, a governance proposal, or a fulfillment pipeline).
 
-```text
+```quint sketch
 module WorkflowTypes {
   type RequestId = int
   type Status = Pending | Approved | Rejected | InProgress | Completed | Cancelled
@@ -46,34 +46,34 @@ module Workflow {
 
   action approveRequest(approver: str, id: RequestId): bool = all {
     APPROVERS.contains(approver),
-    requests.contains(id),
+    requests.keys().contains(id),
     val req = requests.get(id)
     req.status == Pending,
-    requests' = requests.set(id, { ...req, status: Approved, approver: approver }),
+    requests' = requests.put(id, { ...req, status: Approved, approver: approver }),
     nextId' = nextId,
   }
 
   action startProgress(id: RequestId): bool = all {
-    requests.contains(id),
+    requests.keys().contains(id),
     val req = requests.get(id)
     req.status == Approved,
-    requests' = requests.set(id, { ...req, status: InProgress }),
+    requests' = requests.put(id, { ...req, status: InProgress }),
     nextId' = nextId,
   }
 
   action completeRequest(id: RequestId): bool = all {
-    requests.contains(id),
+    requests.keys().contains(id),
     val req = requests.get(id)
     req.status == InProgress,
-    requests' = requests.set(id, { ...req, status: Completed }),
+    requests' = requests.put(id, { ...req, status: Completed }),
     nextId' = nextId,
   }
 
   action cancelRequest(id: RequestId): bool = all {
-    requests.contains(id),
+    requests.keys().contains(id),
     val req = requests.get(id)
     req.status != Completed and req.status != Cancelled,
-    requests' = requests.set(id, { ...req, status: Cancelled }),
+    requests' = requests.put(id, { ...req, status: Cancelled }),
     nextId' = nextId,
   }
 
@@ -112,7 +112,7 @@ module Workflow {
 
 A general pattern for managing any finite resource (CPU, memory, permissions, seats) among participants.
 
-```text
+```quint sketch
 module ResourceTypes {
   type ResourceId = str
   type Participant = str
@@ -147,8 +147,8 @@ module ResourceAllocation {
     currentTotal + amount <= capacity,
     val pAlloc = if (currentAllocations.keys().contains(p)) currentAllocations.get(p) else Map()
     val currentAlloc = if (pAlloc.keys().contains(r)) pAlloc.get(r) else 0
-    currentAllocations' = currentAllocations.set(p, pAlloc.set(r, currentAlloc + amount)),
-    totalAllocated' = totalAllocated.set(r, currentTotal + amount),
+    currentAllocations' = currentAllocations.put(p, pAlloc.put(r, currentAlloc + amount)),
+    totalAllocated' = totalAllocated.put(r, currentTotal + amount),
   }
 
   action deallocate(p: Participant, r: ResourceId, amount: int): bool = all {
@@ -159,8 +159,8 @@ module ResourceAllocation {
     val pAlloc = if (pMap.keys().contains(r)) pMap.get(r) else 0
     val currentTotal = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
     pAlloc >= amount,
-    currentAllocations' = currentAllocations.set(p, pMap.set(r, pAlloc - amount)),
-    totalAllocated' = totalAllocated.set(r, currentTotal - amount),
+    currentAllocations' = currentAllocations.put(p, pMap.put(r, pAlloc - amount)),
+    totalAllocated' = totalAllocated.put(r, currentTotal - amount),
   }
 
   action step = {

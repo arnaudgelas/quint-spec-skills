@@ -46,7 +46,7 @@ module Bank {
   ): Balances = {
     val addrBals = if (bals.keys().contains(addr)) bals.get(addr) else Map()
     val current = if (addrBals.keys().contains(denom)) addrBals.get(denom) else 0
-    bals.set(addr, addrBals.set(denom, current + delta))
+    bals.put(addr, addrBals.put(denom, current + delta))
   }
 
   action init = all {
@@ -58,14 +58,14 @@ module Bank {
     amount > 0,
     amount <= MAX_AMOUNT,
     balances' = addBalance(balances, receiver, denom, amount),
-    totalSupply' = totalSupply.set(denom, getSupply(totalSupply, denom) + amount),
+    totalSupply' = totalSupply.put(denom, getSupply(totalSupply, denom) + amount),
   }
 
   action burn(from: Address, denom: Denom, amount: Amount): bool = all {
     amount > 0,
     getBalance(balances, from, denom) >= amount,
     balances' = addBalance(balances, from, denom, -amount),
-    totalSupply' = totalSupply.set(denom, getSupply(totalSupply, denom) - amount),
+    totalSupply' = totalSupply.put(denom, getSupply(totalSupply, denom) - amount),
   }
 
   action send(from: Address, receiver: Address, denom: Denom, amount: Amount): bool = all {
@@ -161,7 +161,7 @@ module AMM {
         reserve0: newReserve0,
         reserve1: newReserve1,
         totalShares: pool.totalShares + newShares },
-      lpShares' = lpShares.set(user, amountOf(lpShares, user) + newShares),
+      lpShares' = lpShares.put(user, amountOf(lpShares, user) + newShares),
       userBalance0' = userBalance0.setBy(user, b => b - amount0),
       userBalance1' = userBalance1.setBy(user, b => b - amount1),
       kFloor' = newReserve0 * newReserve1,
@@ -253,7 +253,7 @@ module Vault {
       shares > 0,
       totalAssets' = totalAssets + assets,
       totalShares' = totalShares + shares,
-      userShares' = userShares.set(user, amountOf(userShares, user) + shares),
+      userShares' = userShares.put(user, amountOf(userShares, user) + shares),
       userAssets' = userAssets.setBy(user, a => a - assets),
     }
 
@@ -325,7 +325,7 @@ module Lending {
 
   action depositCollateral(user: Address, amount: int): bool = all {
     amount > 0,
-    collateral' = collateral.set(user, amountOf(collateral, user) + amount),
+    collateral' = collateral.put(user, amountOf(collateral, user) + amount),
     borrows' = borrows,
     oraclePrice' = oraclePrice,
   }
@@ -336,7 +336,7 @@ module Lending {
     all {
       amount > 0,
       healthFactor(coll, newDebt, oraclePrice) >= COLLATERAL_FACTOR,
-      borrows' = borrows.set(user, newDebt),
+      borrows' = borrows.put(user, newDebt),
       collateral' = collateral,
       oraclePrice' = oraclePrice,
     }
@@ -350,8 +350,8 @@ module Lending {
       debt > 0,
       healthFactor(coll, debt, oraclePrice) < COLLATERAL_FACTOR,
       seizedCollateral <= coll,
-      collateral' = collateral.set(user, coll - seizedCollateral),
-      borrows' = borrows.set(user, 0),
+      collateral' = collateral.put(user, coll - seizedCollateral),
+      borrows' = borrows.put(user, 0),
       oraclePrice' = oraclePrice,
     }
   }

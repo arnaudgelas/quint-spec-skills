@@ -13,7 +13,7 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 Models the full lifecycle of a cross-chain intent from creation through
 settlement or expiry.
 
-```text
+```quint sketch
 module IntentTypes {
   type Address = str
   type IntentId = int
@@ -58,7 +58,7 @@ module IntentLifecycle {
   var currentHeight: int
 
   def getBalance(chain: ChainId, addr: Address, token: str): int =
-    if (balances.contains((chain, addr, token))) balances.get((chain, addr, token)) else 0
+    if (balances.keys().contains((chain, addr, token))) balances.get((chain, addr, token)) else 0
 
   action init = all {
     intents' = Map(),
@@ -83,8 +83,8 @@ module IntentLifecycle {
       sourceChain: srcChain, destChain: dstChain,
       deadline: currentHeight + 20,
     }
-    intents' = intents.set(nextIntentId, intent),
-    status' = status.set(nextIntentId, Pending),
+    intents' = intents.put(nextIntentId, intent),
+    status' = status.put(nextIntentId, Pending),
     // Lock input tokens
     balances' = balances.setBy((srcChain, creator, inputToken), b => b - inputAmount),
     fills' = fills,
@@ -94,7 +94,7 @@ module IntentLifecycle {
 
   // Solver fills the intent on the destination chain
   action fillIntent(solver: Address, intentId: IntentId, outputAmount: int): bool = all {
-    status.contains(intentId),
+    status.keys().contains(intentId),
     status.get(intentId) == Pending,
     val intent = intents.get(intentId)
     currentHeight < intent.deadline,
@@ -106,8 +106,8 @@ module IntentLifecycle {
     balances' = balances
       .setBy((intent.destChain, solver, intent.outputToken), b => b - outputAmount)
       .setBy((intent.destChain, intent.creator, intent.outputToken), b => b + outputAmount),
-    status' = status.set(intentId, Filled),
-    fills' = fills.set(intentId, {
+    status' = status.put(intentId, Filled),
+    fills' = fills.put(intentId, {
       intentId: intentId, solver: solver,
       outputAmount: outputAmount, fillHeight: currentHeight,
     }),
@@ -118,14 +118,14 @@ module IntentLifecycle {
 
   // Settlement: release escrowed input tokens to solver
   action settleIntent(intentId: IntentId): bool = all {
-    status.contains(intentId),
+    status.keys().contains(intentId),
     status.get(intentId) == Filled,
     val intent = intents.get(intentId)
     val fill = fills.get(intentId)
     // Release locked input tokens to solver on source chain
     balances' = balances.setBy(
       (intent.sourceChain, fill.solver, intent.inputToken), b => b + intent.inputAmount),
-    status' = status.set(intentId, Settled),
+    status' = status.put(intentId, Settled),
     intents' = intents,
     fills' = fills,
     nextIntentId' = nextIntentId,
@@ -134,7 +134,7 @@ module IntentLifecycle {
 
   // Expiry: return locked tokens to creator
   action expireIntent(intentId: IntentId): bool = all {
-    status.contains(intentId),
+    status.keys().contains(intentId),
     status.get(intentId) == Pending,
     val intent = intents.get(intentId)
     currentHeight >= intent.deadline,
@@ -142,7 +142,7 @@ module IntentLifecycle {
     balances' = balances.setBy(
       (intent.sourceChain, intent.creator, intent.inputToken),
       b => b + intent.inputAmount),
-    status' = status.set(intentId, Expired),
+    status' = status.put(intentId, Expired),
     intents' = intents,
     fills' = fills,
     nextIntentId' = nextIntentId,
@@ -183,7 +183,7 @@ module IntentLifecycle {
 
   // Constraint satisfaction: every fill meets minimum output
   val fillsSatisfyConstraints = intents.keys().forall(id =>
-    if (fills.contains(id))
+    if (fills.keys().contains(id))
       fills.get(id).outputAmount >= intents.get(id).minOutputAmount
     else true
   )
@@ -193,7 +193,7 @@ module IntentLifecycle {
     val s = status.get(id)
     // A settled intent must have been filled with at least minOutputAmount
     (s == Settled) implies (
-      fills.contains(id) and
+      fills.keys().contains(id) and
       fills.get(id).outputAmount >= intents.get(id).minOutputAmount
     )
   )
@@ -202,8 +202,8 @@ module IntentLifecycle {
   val terminalStatesStable = intents.keys().forall(id =>
     val s = status.get(id)
     // Settled requires a fill record; Expired requires no fill record
-    ((s == Settled) implies fills.contains(id)) and
-    ((s == Expired) implies not(fills.contains(id)))
+    ((s == Settled) implies fills.keys().contains(id)) and
+    ((s == Expired) implies not(fills.keys().contains(id)))
   )
 }
 ```
@@ -240,7 +240,7 @@ module SolverCompetition {
     SOLVERS.contains(solver),
     nextIntent <= NUM_INTENTS,
     not(intentsFilled.keys().contains(nextIntent)),
-    intentsFilled' = intentsFilled.set(nextIntent, solver),
+    intentsFilled' = intentsFilled.put(nextIntent, solver),
     solverFillCount' = solverFillCount.setBy(solver, c => c + 1),
     nextIntent' = nextIntent + 1,
   }
@@ -269,7 +269,7 @@ module SolverCompetition {
 All orders in a batch clear at the same price. Ensures no order gets
 a worse price than their limit.
 
-```text
+```quint sketch
 module BatchAuction {
   type Address = str
   type OrderId = int
@@ -337,8 +337,8 @@ module BatchAuction {
     // Simplified: pro-rata fill for each qualifying order
     fills' = orders.fold(Map(), (acc, o) =>
       match o.side {
-        | Buy => if (o.limitPrice >= price) acc.set(o.id, o.amount) else acc
-        | Sell => if (o.limitPrice <= price) acc.set(o.id, o.amount) else acc
+        | Buy => if (o.limitPrice >= price) acc.put(o.id, o.amount) else acc
+        | Sell => if (o.limitPrice <= price) acc.put(o.id, o.amount) else acc
       }
     ),
     orders' = orders,
@@ -389,7 +389,7 @@ module BatchAuction {
 Fills are assumed valid during a challenge period. Anyone can challenge
 with proof of invalidity.
 
-```text
+```quint sketch
 module OptimisticVerification {
   type Address = str
   type FillId = int
@@ -415,7 +415,7 @@ module OptimisticVerification {
   var nextFillId: int
 
   def bondOf(solver: Address): int =
-    if (solverBonds.contains(solver)) solverBonds.get(solver) else 0
+    if (solverBonds.keys().contains(solver)) solverBonds.get(solver) else 0
 
   action init = all {
     fillRecords' = Map(),
@@ -435,8 +435,8 @@ module OptimisticVerification {
       claimedOutput: claimedOutput, actualOutput: actualOutput,
       submitHeight: currentHeight,
     }
-    fillRecords' = fillRecords.set(nextFillId, record),
-    fillStatus' = fillStatus.set(nextFillId, Optimistic),
+    fillRecords' = fillRecords.put(nextFillId, record),
+    fillStatus' = fillStatus.put(nextFillId, Optimistic),
     nextFillId' = nextFillId + 1,
     solverBonds' = solverBonds,
     currentHeight' = currentHeight,
@@ -444,14 +444,14 @@ module OptimisticVerification {
 
   // Challenger challenges an invalid fill
   action challenge(challenger: Address, fillId: FillId): bool = all {
-    fillStatus.contains(fillId),
+    fillStatus.keys().contains(fillId),
     fillStatus.get(fillId) == Optimistic,
     val record = fillRecords.get(fillId)
     // Within challenge period
     currentHeight < record.submitHeight + CHALLENGE_PERIOD,
     // Fill is actually invalid (challenger knows the truth)
     record.claimedOutput > record.actualOutput,
-    fillStatus' = fillStatus.set(fillId, Challenged),
+    fillStatus' = fillStatus.put(fillId, Challenged),
     // Slash solver's bond, reward challenger (simplified)
     solverBonds' = solverBonds.setBy(record.solver, b => b - 10),
     fillRecords' = fillRecords,
@@ -461,11 +461,11 @@ module OptimisticVerification {
 
   // Finalize after challenge period with no challenge
   action finalize(fillId: FillId): bool = all {
-    fillStatus.contains(fillId),
+    fillStatus.keys().contains(fillId),
     fillStatus.get(fillId) == Optimistic,
     val record = fillRecords.get(fillId)
     currentHeight >= record.submitHeight + CHALLENGE_PERIOD,
-    fillStatus' = fillStatus.set(fillId, Verified),
+    fillStatus' = fillStatus.put(fillId, Verified),
     fillRecords' = fillRecords,
     solverBonds' = solverBonds,
     nextFillId' = nextFillId,

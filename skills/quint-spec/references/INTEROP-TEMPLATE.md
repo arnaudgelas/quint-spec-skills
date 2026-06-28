@@ -11,7 +11,7 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 
 Full send/receive/ack/timeout packet flow for fungible token transfers.
 
-```text
+```quint sketch
 module ICS20Types {
   type ChainId = str
   type ChannelId = str
@@ -60,16 +60,16 @@ module ICS20 {
   var acks: Set[(Packet, Ack)]   // Acknowledgements pending processing
 
   pure def getBalance(state: ChainState, addr: Address, denom: Denom): int =
-    if (state.balances.contains(addr) and state.balances.get(addr).contains(denom))
+    if (state.balances.keys().contains(addr) and state.balances.get(addr).keys().contains(denom))
       state.balances.get(addr).get(denom)
     else
       0
 
   pure def getEscrow(state: ChainState, channel: ChannelId, denom: Denom): int =
-    if (state.escrow.contains((channel, denom))) state.escrow.get((channel, denom)) else 0
+    if (state.escrow.keys().contains((channel, denom))) state.escrow.get((channel, denom)) else 0
 
   pure def getSeqOrOne(sequences: ChannelId -> int, channel: ChannelId): int =
-    if (sequences.contains(channel)) sequences.get(channel) else 1
+    if (sequences.keys().contains(channel)) sequences.get(channel) else 1
 
   pure def addBalance(
     balances: Address -> (Denom -> int),
@@ -77,9 +77,9 @@ module ICS20 {
     denom: Denom,
     delta: int,
   ): Address -> (Denom -> int) = {
-    val addrBalances = if (balances.contains(addr)) balances.get(addr) else Map()
-    val current = if (addrBalances.contains(denom)) addrBalances.get(denom) else 0
-    balances.set(addr, addrBalances.set(denom, current + delta))
+    val addrBalances = if (balances.keys().contains(addr)) balances.get(addr) else Map()
+    val current = if (addrBalances.keys().contains(denom)) addrBalances.get(denom) else 0
+    balances.put(addr, addrBalances.put(denom, current + delta))
   }
 
   action init = all {
@@ -111,10 +111,10 @@ module ICS20 {
     val newState = {
       ...state,
       balances: addBalance(state.balances, sender, denom, -amount),
-      escrow: state.escrow.set((channel, denom), getEscrow(state, channel, denom) + amount),
-      nextSeqSend: state.nextSeqSend.set(channel, seq + 1),
+      escrow: state.escrow.put((channel, denom), getEscrow(state, channel, denom) + amount),
+      nextSeqSend: state.nextSeqSend.put(channel, seq + 1),
     }
-    chains' = chains.set(chain, newState),
+    chains' = chains.put(chain, newState),
     inflight' = inflight.union(Set(packet)),
     acks' = acks,
   }
@@ -132,9 +132,9 @@ module ICS20 {
     val newState = {
       ...state,
       balances: addBalance(state.balances, d.receiver, voucherDenom, d.amount),
-      nextSeqRecv: state.nextSeqRecv.set(packet.dstChannel, expectedSeq + 1),
+      nextSeqRecv: state.nextSeqRecv.put(packet.dstChannel, expectedSeq + 1),
     }
-    chains' = chains.set(chain, newState),
+    chains' = chains.put(chain, newState),
     inflight' = inflight.exclude(Set(packet)),
     acks' = acks.union(Set((packet, AckSuccess))),
   }
@@ -154,7 +154,7 @@ module ICS20 {
       balances: addBalance(srcState.balances, d.sender, d.denom, d.amount),
       escrow: srcState.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
     }
-    chains' = chains.set(srcChain, newSrcState),
+    chains' = chains.put(srcChain, newSrcState),
     inflight' = inflight.exclude(Set(packet)),
     acks' = acks,
   }
@@ -178,7 +178,7 @@ module ICS20 {
             balances: addBalance(state.balances, d.sender, d.denom, d.amount),
             escrow: state.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
           }
-          chains' = chains.set(srcChain, newState),
+          chains' = chains.put(srcChain, newState),
           acks' = acks.exclude(Set((packet, ack))),
           inflight' = inflight,
         }
@@ -188,7 +188,7 @@ module ICS20 {
   action advanceHeight(chain: ChainId): bool = all {
     val state = chains.get(chain)
     state.height < MAX_HEIGHT,
-    chains' = chains.set(chain, { ...state, height: state.height + 1 }),
+    chains' = chains.put(chain, { ...state, height: state.height + 1 }),
     inflight' = inflight,
     acks' = acks,
   }
@@ -284,7 +284,7 @@ module ThresholdBridge {
   action sign(validator: Validator, msg: Message): bool = all {
     VALIDATORS.contains(validator),
     not(executed.contains(msg.nonce)),
-    signatures' = signatures.set(msg, signers(msg).union(Set(validator))),
+    signatures' = signatures.put(msg, signers(msg).union(Set(validator))),
     executed' = executed,
   }
 
@@ -316,7 +316,7 @@ module ThresholdBridge {
 Generic cross-chain transfer pattern with escrow on source, fill on destination,
 and settlement or timeout refund.
 
-```text
+```quint sketch
 module EscrowFillSettle {
   type Address = str
   type OrderId = int
@@ -345,10 +345,10 @@ module EscrowFillSettle {
   var currentHeight: int
 
   pure def amountOf(m: Address -> int, user: Address): int =
-    if (m.contains(user)) m.get(user) else 0
+    if (m.keys().contains(user)) m.get(user) else 0
 
   pure def addAmount(m: Address -> int, user: Address, delta: int): Address -> int =
-    m.set(user, amountOf(m, user) + delta)
+    m.put(user, amountOf(m, user) + delta)
 
   action init = all {
     orders' = Map(),
@@ -370,8 +370,8 @@ module EscrowFillSettle {
       sourceAmount: srcAmt, destAmount: dstAmt,
       timeoutHeight: currentHeight + 10,
     }
-    orders' = orders.set(nextOrderId, order),
-    orderStatus' = orderStatus.set(nextOrderId, Escrowed),
+    orders' = orders.put(nextOrderId, order),
+    orderStatus' = orderStatus.put(nextOrderId, Escrowed),
     orderFiller' = orderFiller,
     sourceBalances' = sourceBalances.setBy(sender, b => b - srcAmt),
     destBalances' = destBalances,
@@ -381,7 +381,7 @@ module EscrowFillSettle {
 
   // Step 2: Filler delivers tokens on destination chain
   action fill(filler: Address, orderId: OrderId): bool = all {
-    orderStatus.contains(orderId),
+    orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Escrowed,
     val order = orders.get(orderId)
     currentHeight < order.timeoutHeight,
@@ -391,8 +391,8 @@ module EscrowFillSettle {
       order.receiver,
       order.destAmount,
     ),
-    orderStatus' = orderStatus.set(orderId, Filled),
-    orderFiller' = orderFiller.set(orderId, filler),  // Record who filled this order
+    orderStatus' = orderStatus.put(orderId, Filled),
+    orderFiller' = orderFiller.put(orderId, filler),  // Record who filled this order
     // Frame conditions
     orders' = orders,
     sourceBalances' = sourceBalances,
@@ -402,14 +402,14 @@ module EscrowFillSettle {
 
   // Step 3: Settlement releases escrowed tokens to the filler on source chain
   action settle(orderId: OrderId): bool = all {
-    orderStatus.contains(orderId),
+    orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Filled,
-    orderFiller.contains(orderId),
+    orderFiller.keys().contains(orderId),
     val order = orders.get(orderId)
     val filler = orderFiller.get(orderId)
     // Release the escrowed sourceAmount to the filler
     sourceBalances' = sourceBalances.setBy(filler, b => b + order.sourceAmount),
-    orderStatus' = orderStatus.set(orderId, Settled),
+    orderStatus' = orderStatus.put(orderId, Settled),
     orders' = orders,
     orderFiller' = orderFiller,
     destBalances' = destBalances,
@@ -419,13 +419,13 @@ module EscrowFillSettle {
 
   // Timeout: refund escrowed tokens to sender
   action timeout(orderId: OrderId): bool = all {
-    orderStatus.contains(orderId),
+    orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Escrowed,
     val order = orders.get(orderId)
     currentHeight >= order.timeoutHeight,
     sourceBalances' = sourceBalances.setBy(order.sender, b =>
       b + order.sourceAmount),
-    orderStatus' = orderStatus.set(orderId, Refunded),
+    orderStatus' = orderStatus.put(orderId, Refunded),
     orders' = orders,
     orderFiller' = orderFiller,
     destBalances' = destBalances,

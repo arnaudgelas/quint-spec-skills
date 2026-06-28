@@ -93,7 +93,7 @@ module defiSpells {
   ): str -> (str -> int) = {
     val addrBals = if (balances.keys().contains(addr)) balances.get(addr) else Map()
     val current = if (addrBals.keys().contains(denom)) addrBals.get(denom) else 0
-    balances.set(addr, addrBals.set(denom, current + delta))
+    balances.put(addr, addrBals.put(denom, current + delta))
   }
 
   /// Transfer between two addresses (returns updated balances)
@@ -138,7 +138,7 @@ module defiSpells {
 
 Import spells into your specification modules:
 
-```text
+```quint sketch
 module MyProtocol {
   import basicSpells.*
   import defiSpells.*
