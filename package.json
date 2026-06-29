@@ -2,9 +2,25 @@
   "name": "quint-spec-skill",
   "version": "0.1.0",
   "description": "An AI agent skill for building formal Quint specifications",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zmanian/quint-spec-skill.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zmanian/quint-spec-skill/issues"
+  },
+  "homepage": "https://github.com/zmanian/quint-spec-skill#readme",
+  "keywords": [
+    "quint",
+    "formal-methods",
+    "model-checking",
+    "codex-skill"
+  ],
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.18.1"
   },
   "scripts": {
     "test": "node --test scripts/*.test.mjs",
@@ -16,7 +32,8 @@
     "validate:quint": "node scripts/validate-quint-snippets.mjs",
     "validate:quint:typecheck": "node scripts/validate-quint-snippets.mjs --typecheck --strict-labels",
     "validate:quint:all": "node scripts/validate-quint-snippets.mjs --all --strict-labels",
-    "validate:quint:all:typecheck": "node scripts/validate-quint-snippets.mjs --all --typecheck --strict-labels"
+    "validate:quint:all:typecheck": "node scripts/validate-quint-snippets.mjs --all --typecheck --strict-labels",
+    "validate:quint:runtime": "node scripts/validate-quint-snippets.mjs --run --strict-labels"
   },
   "devDependencies": {
     "@informalsystems/quint": "0.32.0",

@@ -30,6 +30,7 @@ Known integration patterns:
 | Agent               | Loading Method                               | Entry Point |
 | :------------------ | :------------------------------------------- | :---------- |
 | **Claude Code**     | Global or Project-level `skills/` directory  | `SKILL.md`  |
+| **Codex**           | Local Codex skills directory                 | `SKILL.md`  |
 | **Gemini CLI**      | Tooling-dependent; map skill entry manually  | `SKILL.md`  |
 | **Roo Code**        | Tooling-dependent; reference from mode rules | `SKILL.md`  |
 | **Cursor/Windsurf** | Tooling-dependent; import via local rules    | `SKILL.md`  |
@@ -48,6 +49,12 @@ npm install -g @informalsystems/quint@latest
 
 # For formal verification: JDK 17+ (Required for Apalache)
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
+```
+
+For repository maintenance, install the pinned local toolchain instead:
+
+```bash
+npm ci
 ```
 
 ### 2. Install the Skill
@@ -72,9 +79,16 @@ Add the `skills` directory to your Gemini CLI configuration and run:
 activate_skill quint-spec
 ```
 
+#### For Codex
+
+Copy or symlink the whole `skills/quint-spec` directory into the Codex skills directory
+for your environment. The reference files are required; `SKILL.md` alone is not enough.
+
 #### For Roo Code / Roo Cline
 
-Copy the `skills/quint-spec/SKILL.md` content into your `.clinerules` or use the Project-level skills directory if your mode supports it.
+Reference the whole `skills/quint-spec` directory from mode rules where supported. If
+you must paste rules manually, include the required reference files or expect degraded
+behavior.
 
 ## Triggering the Skill
 
@@ -109,12 +123,16 @@ npm run upstream:check -- --offline
 npm run upstream:update
 ```
 
+If npm latest has moved past the pinned local `@informalsystems/quint`, bump the dev
+dependency first with `npm install --save-dev @informalsystems/quint@<latest>`.
+
 ### Snippet Validation
 
 Quint snippets are label-driven:
 
 - ` ```quint executable ` blocks are standalone and validated in CI.
-- ` ```quint illustrative ` blocks are conceptual and may omit surrounding declarations.
+- ` ```quint illustrative ` blocks are self-contained enough for deep typecheck validation.
+- ` ```quint sketch ` blocks are partial Quint fragments that are counted but intentionally not typechecked.
 
 ```bash
 # CI-equivalent validation (standalone executable snippets only)
@@ -126,9 +144,12 @@ npm run validate:quint:typecheck
 # Ensure every reference file declares fence and validation policy
 npm run validate:references
 
-# Deep audit: parses all Quint fences (executable + illustrative).
+# Deep audit: parses all executable and illustrative Quint fences.
 # Recommended before release changes to references.
 npm run validate:quint:all
+
+# Runtime smoke for executable snippets that define init and step.
+npm run validate:quint:runtime
 ```
 
 ## Project Structure
