@@ -36,7 +36,7 @@ test('stableStringify sorts keys', () => {
 
 test('parseLastUpdatedDate from fixture HTML', () => {
   const html = readFileSync(path.join(fixtureDir, 'quint-cli-page.fixture.html'), 'utf8')
-  assert.strictEqual(parseLastUpdatedDate(html), 'October 17, 2025')
+  assert.strictEqual(parseLastUpdatedDate(html), 'June 2, 2026')
 })
 
 test('parseJdkRecommendation from fixture HTML', () => {
@@ -48,7 +48,6 @@ test('parseCliCommands from fixture HTML headings', () => {
   const html = readFileSync(path.join(fixtureDir, 'quint-cli-page.fixture.html'), 'utf8')
   assert.deepStrictEqual(parseCliCommands(html), [
     'compile',
-    'docs',
     'indent',
     'lint',
     'parse',

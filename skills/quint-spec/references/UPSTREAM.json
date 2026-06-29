@@ -53,9 +53,11 @@
       "typecheck",
       "verify"
     ],
-    "cliDocsLastUpdated": "April 9, 2026",
+    "cliDocsLastUpdated": "June 2, 2026",
     "latestVersion": "0.32.0",
-    "localCliSource": "node_modules/.bin/quint"
+    "localCliSource": "node_modules/.bin/quint",
+    "localCliVersion": "0.32.0",
+    "pinnedVersion": "0.32.0"
   },
   "sources": {
     "apalacheJvmDocs": "https://apalache-mc.org/docs/apalache/installation/jvm.html",

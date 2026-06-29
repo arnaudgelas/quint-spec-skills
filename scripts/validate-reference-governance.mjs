@@ -10,16 +10,17 @@ const repoRoot = path.resolve(__dirname, '..')
 const referencesDir = path.join(repoRoot, 'skills', 'quint-spec', 'references')
 const governancePath = path.join(referencesDir, 'REFERENCE-GOVERNANCE.json')
 
-const ALLOWED_FENCE_POLICIES = new Set(['none', 'illustrative', 'executable', 'mixed'])
+const ALLOWED_FENCE_POLICIES = new Set(['none', 'illustrative', 'executable', 'mixed', 'sketch'])
 const ALLOWED_VALIDATION_EXPECTATIONS = new Set(['ci-executable-only', 'manual-all-fences'])
 
 function classifyFencePolicy(content) {
-  const regex = /^```quint(?:\s+([^\n`]+))?\s*$/gm
+  const regex = /^[ \t]{0,3}```quint(?:\s+([^\n`]+))?\s*$/gm
 
   let total = 0
   let executable = 0
   let illustrative = 0
   let unlabeled = 0
+  let sketch = 0
 
   let match
   while ((match = regex.exec(content)) !== null) {
@@ -37,22 +38,41 @@ function classifyFencePolicy(content) {
       illustrative++
       continue
     }
+    if (labels.includes('sketch')) {
+      sketch++
+      continue
+    }
     unlabeled++
   }
 
   if (total === 0) {
-    return { policy: 'none', total, executable, illustrative, unlabeled }
+    return { policy: 'none', total, executable, illustrative, sketch, unlabeled }
   }
   if (unlabeled > 0) {
-    return { policy: 'unlabeled', total, executable, illustrative, unlabeled }
+    return { policy: 'unlabeled', total, executable, illustrative, sketch, unlabeled }
   }
-  if (executable > 0 && illustrative > 0) {
-    return { policy: 'mixed', total, executable, illustrative, unlabeled }
+  if ([executable, illustrative, sketch].filter((count) => count > 0).length > 1) {
+    return { policy: 'mixed', total, executable, illustrative, sketch, unlabeled }
   }
   if (executable > 0) {
-    return { policy: 'executable', total, executable, illustrative, unlabeled }
+    return { policy: 'executable', total, executable, illustrative, sketch, unlabeled }
   }
-  return { policy: 'illustrative', total, executable, illustrative, unlabeled }
+  if (sketch > 0) {
+    return { policy: 'sketch', total, executable, illustrative, sketch, unlabeled }
+  }
+  return { policy: 'illustrative', total, executable, illustrative, sketch, unlabeled }
+}
+
+function countSuspiciousTextFences(content) {
+  const regex = /^[ \t]{0,3}```text\s*\n([\s\S]*?)^[ \t]{0,3}```[ \t]*$/gm
+  let count = 0
+  let match
+  while ((match = regex.exec(content)) !== null) {
+    if (/^\s*(module|import|export|action|run|temporal)\b/m.test(match[1])) {
+      count++
+    }
+  }
+  return count
 }
 
 async function main() {
@@ -94,6 +114,13 @@ async function main() {
 
     const content = await readFile(path.join(referencesDir, fileName), 'utf8')
     const observed = classifyFencePolicy(content)
+    const suspiciousTextFences = countSuspiciousTextFences(content)
+
+    if (suspiciousTextFences > 0) {
+      issues.push(
+        `${fileName}: contains ${suspiciousTextFences} text fence(s) that look like Quint`,
+      )
+    }
 
     if (observed.policy === 'unlabeled') {
       issues.push(`${fileName}: contains unlabeled quint fences`)

@@ -41,6 +41,7 @@ const paths = {
   skill: path.join(repoRoot, 'skills/quint-spec/SKILL.md'),
   toolchain: path.join(repoRoot, 'skills/quint-spec/references/TOOLCHAIN.md'),
   metadata: path.join(repoRoot, 'skills/quint-spec/references/UPSTREAM.json'),
+  packageJson: path.join(repoRoot, 'package.json'),
 }
 
 const urls = {
@@ -191,6 +192,33 @@ function runLocalQuintHelp() {
   }
 }
 
+function runLocalQuintVersion() {
+  const localBin = findLocalQuintBin()
+  if (!localBin) {
+    return null
+  }
+
+  const result = spawnSync(localBin, ['--version'], {
+    encoding: 'utf8',
+  })
+  if (result.status !== 0) {
+    return null
+  }
+
+  return result.stdout.trim()
+}
+
+async function readPinnedQuintVersion() {
+  const packageJson = JSON.parse(await readText(paths.packageJson))
+  const version = packageJson?.devDependencies?.['@informalsystems/quint']
+  if (!/^\d+\.\d+\.\d+$/.test(version ?? '')) {
+    throw new Error(
+      `${paths.packageJson} must pin @informalsystems/quint to an exact x.y.z version`,
+    )
+  }
+  return version
+}
+
 function diffCommands(fromDocs, fromCli) {
   const docsSet = new Set(fromDocs)
   const cliSet = new Set(fromCli)
@@ -279,6 +307,7 @@ async function fetchText(url) {
 }
 
 async function fetchSnapshot() {
+  const pinnedQuintVersion = await readPinnedQuintVersion()
   const [npmText, cliDocsText, apalacheText] = await Promise.all([
     fetchText(urls.quintNpmLatest),
     fetchText(urls.quintCliDocs),
@@ -286,6 +315,21 @@ async function fetchSnapshot() {
   ])
 
   const npmData = JSON.parse(npmText)
+  if (npmData.version !== pinnedQuintVersion) {
+    throw Object.assign(
+      new Error(
+        [
+          'Pinned Quint package is behind npm latest.',
+          `Pinned version: ${pinnedQuintVersion}`,
+          `Npm latest:     ${npmData.version}`,
+          `Run: npm install --save-dev @informalsystems/quint@${npmData.version}`,
+          'Then run: node scripts/quint-upstream-check.mjs --update',
+        ].join('\n'),
+      ),
+      { code: 2 },
+    )
+  }
+
   const docsCommands = parseCliCommands(cliDocsText)
   if (docsCommands.length === 0) {
     throw new Error(`Could not parse CLI commands from ${urls.quintCliDocs}`)
@@ -296,6 +340,17 @@ async function fetchSnapshot() {
     throw new Error('Could not parse command inventory from local Quint CLI (--help output)')
   }
   const localCliCommands = localCli.commands
+  const localCliVersion = runLocalQuintVersion()
+  if (localCliVersion !== pinnedQuintVersion) {
+    throw new Error(
+      [
+        'Local Quint CLI version does not match package.json.',
+        `package.json: ${pinnedQuintVersion}`,
+        `local CLI:    ${localCliVersion ?? '<unavailable>'}`,
+        'Run: npm ci',
+      ].join('\n'),
+    )
+  }
   const commandDiff = diffCommands(docsCommands, localCliCommands)
 
   const jdkRecommendation = parseJdkRecommendation(apalacheText)
@@ -307,6 +362,8 @@ async function fetchSnapshot() {
     sources: urls,
     quint: {
       latestVersion: npmData.version,
+      pinnedVersion: pinnedQuintVersion,
+      localCliVersion,
       cliCommands: localCliCommands,
       cliCommandsImplemented: localCliCommands,
       cliCommandsDocumented: docsCommands,
@@ -429,14 +486,34 @@ function assertMetadataMatchesSnapshot(localMetadata, remoteSnapshot) {
   if (localJson !== remoteJson) {
     const localVersion = localMetadata?.quint?.latestVersion ?? '<missing>'
     const remoteVersion = remoteSnapshot?.quint?.latestVersion ?? '<missing>'
+    const changedFields = []
+    for (const key of [
+      'quint.latestVersion',
+      'quint.pinnedVersion',
+      'quint.localCliVersion',
+      'quint.cliDocsLastUpdated',
+      'apalache.recommendedJdk',
+      'apalache.jvmDocsLastUpdated',
+    ]) {
+      const localValue = key.split('.').reduce((acc, part) => acc?.[part], localMetadata)
+      const remoteValue = key.split('.').reduce((acc, part) => acc?.[part], remoteSnapshot)
+      if (JSON.stringify(localValue) !== JSON.stringify(remoteValue)) {
+        changedFields.push(
+          `- ${key}: ${JSON.stringify(localValue)} -> ${JSON.stringify(remoteValue)}`,
+        )
+      }
+    }
     throw Object.assign(
       new Error(
         [
           'Upstream drift detected.',
           `Local version:  ${localVersion}`,
           `Remote version: ${remoteVersion}`,
+          changedFields.length > 0 ? ['Changed fields:', ...changedFields].join('\n') : null,
           'Run: node scripts/quint-upstream-check.mjs --update',
-        ].join('\n'),
+        ]
+          .filter(Boolean)
+          .join('\n'),
       ),
       { code: 2 },
     )
