@@ -12,8 +12,9 @@ always verify with `quint <command> --help` and the official CLI manual.
 ## Installation
 
 ```bash
-# Install latest Quint CLI
-npm install -g @informalsystems/quint@latest
+# Reproducible install -- pin to the version this skill was tested with.
+# Using @latest installs whatever is current and may break skill patterns.
+npm install -g @informalsystems/quint@0.32.0
 
 # Verify
 quint --version

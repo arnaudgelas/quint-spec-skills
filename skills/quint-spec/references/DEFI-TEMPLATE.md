@@ -16,12 +16,12 @@ used in Solidity and most EVM contracts.
 
 **Standard scaling conventions:**
 
-| Precision   | Scale factor | Typical use                            |
-|-------------|-------------|----------------------------------------|
-| 2 decimals  | × 100       | Simple percentages                     |
-| 4 decimals  | × 10,000    | Basis points (30 bps = 0.3% swap fee)  |
-| 6 decimals  | × 10^6      | USDC, most stablecoins                 |
-| 18 decimals | × 10^18     | ETH/ERC-20 wei, default Solidity math  |
+| Precision   | Scale factor | Typical use                           |
+| ----------- | ------------ | ------------------------------------- |
+| 2 decimals  | × 100        | Simple percentages                    |
+| 4 decimals  | × 10,000     | Basis points (30 bps = 0.3% swap fee) |
+| 6 decimals  | × 10^6       | USDC, most stablecoins                |
+| 18 decimals | × 10^18      | ETH/ERC-20 wei, default Solidity math |
 
 **Modeling rules:**
 
