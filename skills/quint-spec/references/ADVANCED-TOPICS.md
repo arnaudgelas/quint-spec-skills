@@ -98,9 +98,13 @@ temporal intentsResolveShort =
     )
   )
 
-// Deadlock freedom: the step action always has at least one enabled branch
-// (verified implicitly: if quint run never gets stuck, the model is deadlock-free)
-// Explicitly, ensure step covers all possible states with a stutter branch.
+// Deadlock freedom: simulation (quint run) not getting stuck is a heuristic only --
+// it does NOT prove deadlock freedom; unexplored paths may still be stuck.
+// For a formal check use an explicit enabledness invariant:
+//   val notDeadlocked = enabled(step)
+// or run exhaustive finite-state checking with TLC.
+// Always add a stutter branch (all { var1' = var1, ... }) so the model never
+// gets stuck when no meaningful action applies.
 ```
 
 **Verify temporal properties:**
