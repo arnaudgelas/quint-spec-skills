@@ -115,6 +115,12 @@ quint verify --backend=tlc --temporal=intentsResolve --max-steps=20 spec.qnt
 
 Once a Quint specification is verified, use it to generate the **Interface** or **Skeleton** of the implementation.
 
+> **Warning:** Generated code is a starting point, not a verified implementation.
+> The Quint spec models an abstraction; the generated skeleton must be independently
+> reviewed, audited, and tested. Guards in generated `require` statements correspond
+> to Quint guards but do not account for gas, reentrancy, integer overflow (`int` →
+> `uint256`), or any behavior omitted from the model.
+
 ### Generation Strategy
 
 1. **Types to Structs**: Convert Quint `type` records and sum types to Solidity `struct`/`enum`, Rust `struct`/`enum`, or Go `type`.

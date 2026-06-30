@@ -74,6 +74,16 @@ quint verify --out-itf=bug.itf.json spec.qnt
 
 When requested, generate a custom test runner in the user's specific stack (e.g., Solidity/Foundry, Go/Cosmos-SDK, Rust, TypeScript). The runner must bridge the **Abstraction Gap** between the spec and the code.
 
+> **Safety notice:** Generated test runners are **not verified implementations**.
+> Before using any generated runner in a production pipeline:
+>
+> - Document every abstraction mapping (integer overflow: `int` → `uint256`, missing-key
+>   defaults, type coercions).
+> - Keep generated code in a clearly labeled directory (e.g., `test/generated/`) and
+>   never merge it into production paths without independent review.
+> - Treat ITF traces as coming from trusted sources only (your own verified specs, not
+>   user-supplied files).
+
 ### The Runner Architecture
 
 Every test runner needs four components:
@@ -121,7 +131,7 @@ function runTrace(traceFile, implementation) {
 
 When building a runner for a specific stack, follow these guidelines:
 
-- **Rust (CosmWasm, Cosmos-SDK)**: [**Quint Connect**](https://github.com/informalsystems/quint-connect) (released February 2026) is Informal Systems' first-party Rust MBT library. It handles ITF parsing, state mapping, and test harness generation for Rust/CosmWasm stacks. Use it instead of building a custom runner from scratch for Rust targets.
+- **Rust (CosmWasm, Cosmos-SDK)**: [**Quint Connect**](https://github.com/informalsystems/quint-connect) is Informal Systems' Rust MBT library for ITF parsing, state mapping, and test harness generation for Rust/CosmWasm stacks. Check the repository for its current release status before depending on it; availability and API stability may have changed since this reference was written.
 - **Smart Contracts (Solidity/Foundry)**: Use `ffi` (Foreign Function Interface) or file-read utilities to load the JSON. Map Quint's `Address` strings to actual hex addresses. Ensure precision issues (like Quint's infinite ints vs `uint256`) are mapped correctly.
 - **Go (Cosmos-SDK, Backend)**: Use `encoding/json` to unmarshal the ITF file. The runner acts as a standard Go test suite, initializing the keeper/module with the genesis state derived from the first ITF state.
 - **TypeScript (Node.js/Frontend)**: The easiest environment, as JSON parsing is native. Map Quint Maps to JS `Map` or objects.

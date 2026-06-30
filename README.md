@@ -12,7 +12,7 @@ When activated, this skill guides an AI agent through a rigorous workflow to bui
 4.  **Actions** - Build atomic state transitions using the guard + update pattern.
 5.  **Properties** - Define invariants (safety) and temporal properties (liveness).
 6.  **Testing** - Write executable test traces for scenario validation.
-7.  **Verification** - Run simulations and formal model checking via Apalache.
+7.  **Verification** - Run simulations and bounded model checking via Apalache (or full coverage with TLC/inductive invariants).
 8.  **Implementation Mapping** - Map Quint types and actions to specific implementation code.
 9.  **Model-Based Testing & Fuzzing** - Generate test runners to replay Quint traces against the target stack.
 10. **Refinement Modeling** - Prove that low-level models correctly implement abstract ones.
@@ -44,12 +44,16 @@ You must have the Quint toolchain installed on your machine for the agent to run
 Use the canonical CLI manual for command/flag behavior: https://quint.sh/docs/quint
 
 ```bash
-# Install Quint CLI
-npm install -g @informalsystems/quint@latest
+# Reproducible install -- use the version this skill was tested with
+# (tracked in skills/quint-spec/references/UPSTREAM.json):
+npm install -g @informalsystems/quint@0.32.0
 
 # For formal verification: JDK 17+ (Required for Apalache)
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
 ```
+
+> **Reproducibility note:** `@informalsystems/quint@latest` installs whatever is
+> current at install time. For formal verification work, pin to the version above.
 
 For repository maintenance, install the pinned local toolchain instead:
 
@@ -130,9 +134,14 @@ dependency first with `npm install --save-dev @informalsystems/quint@<latest>`.
 
 Quint snippets are label-driven:
 
-- ` ```quint executable ` blocks are standalone and validated in CI.
-- ` ```quint illustrative ` blocks are self-contained enough for deep typecheck validation.
-- ` ```quint sketch ` blocks are partial Quint fragments that are counted but intentionally not typechecked.
+- ` ```quint executable ` blocks are standalone modules validated in CI (parse + optional typecheck/runtime).
+- ` ```quint illustrative ` blocks are self-contained but are **only validated manually** (`npm run validate:quint:all`), not in CI.
+- ` ```quint sketch ` blocks are partial Quint fragments counted but intentionally not typechecked.
+
+**Coverage note:** The majority of fences in reference files are `sketch` (partial
+fragments). The default CI pass (`validate:quint -- --strict-labels`) validates only
+`executable` fences. Runtime smoke (`validate:quint:runtime`) runs only snippets that
+define both `init` and `step`. Do not interpret a green CI as full semantic coverage.
 
 ```bash
 # CI-equivalent validation (standalone executable snippets only)
