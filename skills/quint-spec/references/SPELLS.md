@@ -28,23 +28,23 @@ module basicSpells {
   /// Clamp a value to [lo, hi]
   pure def clamp(x: int, lo: int, hi: int): int = max(lo, min(x, hi))
 
-  /// Remove an element from a set
-  pure def setRemove(s: Set[int], elem: int): Set[int] =
+  /// Remove an element from a set (polymorphic: works for Set[int], Set[str], etc.)
+  pure def setRemove(s: Set[a], elem: a): Set[a] =
     s.exclude(Set(elem))
 
-  /// Remove a key from a map
-  pure def mapRemove(m: str -> int, key: str): str -> int =
+  /// Remove a key from a map (polymorphic: works for any key -> value types)
+  pure def mapRemove(m: a -> b, key: a): a -> b =
     m.keys().exclude(Set(key)).mapBy(k => m.get(k))
 
-  /// Map values of a map
-  pure def mapValues(m: str -> int, f: int => int): str -> int =
+  /// Map values of a map (polymorphic over key, value, and result types)
+  pure def mapValues(m: a -> b, f: b => c): a -> c =
     m.keys().mapBy(k => f(m.get(k)))
 
   /// Sum of a set of integers
   pure def setSum(s: Set[int]): int = s.fold(0, (acc, x) => acc + x)
 
-  /// Check if a list contains an element
-  pure def listContains(l: List[int], elem: int): bool =
+  /// Check if a list contains an element (polymorphic)
+  pure def listContains(l: List[a], elem: a): bool =
     l.foldl(false, (found, x) => found or x == elem)
 }
 ```
@@ -159,11 +159,12 @@ module MyProtocol {
 When building spells for your protocol:
 
 1. Use `pure def` -- spells should be stateless functions
-2. **Quint v0.32.0 does not support type parameters on `pure def` functions.**
-   The syntax `pure def f[a](x: a): a` is a parse error. Type parameters are only
-   supported on type definitions (`type Option[a] = Some(a) | None`). The helpers
-   above use concrete types (`Set[int]`, `List[int]`) intentionally; if you need
-   the same logic for `Set[str]` or `Set[Address]`, write a domain-specific copy.
+2. **Implicit type variables work.** Any lowercase name in a type signature that is
+   not a concrete type (`int`, `bool`, `str`) is treated as a free type variable.
+   Write `pure def setRemove(s: Set[a], elem: a): Set[a]` and Quint infers `a`
+   at each call site.
+   **One limitation:** the explicit bracket syntax `pure def f[a](x: a): a` is a
+   parse error (`QNT000: extraneous input '['`). Use implicit lowercase names only.
 3. Keep them in a separate module for reuse
 4. Document the expected behavior and edge cases
 5. Test spells independently before using in protocol actions
