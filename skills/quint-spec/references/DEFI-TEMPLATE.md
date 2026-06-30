@@ -7,6 +7,50 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 
 ---
 
+## Fixed-Point Arithmetic and Scaling
+
+Quint uses arbitrary-precision integers (`int`) with no floating-point or rational
+number support. DeFi protocols that work with fractional values (interest rates,
+prices, fee percentages) must model them as scaled integers -- the same technique
+used in Solidity and most EVM contracts.
+
+**Standard scaling conventions:**
+
+| Precision   | Scale factor | Typical use                            |
+|-------------|-------------|----------------------------------------|
+| 2 decimals  | × 100       | Simple percentages                     |
+| 4 decimals  | × 10,000    | Basis points (30 bps = 0.3% swap fee)  |
+| 6 decimals  | × 10^6      | USDC, most stablecoins                 |
+| 18 decimals | × 10^18     | ETH/ERC-20 wei, default Solidity math  |
+
+**Modeling rules:**
+
+- **Integer division truncates** toward zero -- identical to Solidity's `/`. The
+  operation order affects rounding: `(a * b) / c` loses at most 1 unit; `(a / c) * b`
+  can lose up to `(c-1) * b / c` units. Always multiply before dividing.
+- **Tolerance-based invariants.** Replace `result == expected` with
+  `result >= expected - 1 and result <= expected + 1` wherever integer division
+  is involved. Use `withinTolerance` from SPELLS.md.
+- **Overflow is invisible in Quint** (`int` is unbounded) but silently wraps at
+  `2^256` in `uint256` implementations. Guard overflow-sensitive expressions
+  explicitly -- e.g., `amount <= MAX_UINT256 - reserve` -- or represent the
+  hardware bound as a `const`.
+
+```quint sketch
+// 0.3% swap fee modeled in basis points (scale = 10,000)
+const FEE_BPS: int    // e.g., 30
+const BPS_DENOM: int  // e.g., 10000
+
+// Apply fee: multiply first, then divide
+pure def applyFee(amount: int): int =
+  amount * (BPS_DENOM - FEE_BPS) / BPS_DENOM
+
+// Conservation check: net + fee <= original (integer division may consume 1 unit)
+val feeConservation = applyFee(1000) + (1000 * FEE_BPS / BPS_DENOM) <= 1000
+```
+
+---
+
 ## Token / Balance Accounting (Cosmos Bank Pattern)
 
 The foundation for any protocol that manages token balances.

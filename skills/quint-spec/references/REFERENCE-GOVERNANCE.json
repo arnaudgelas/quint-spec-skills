@@ -6,7 +6,7 @@
       "validationExpectation": "manual-all-fences"
     },
     "DEFI-TEMPLATE.md": {
-      "quintFencePolicy": "illustrative",
+      "quintFencePolicy": "mixed",
       "validationExpectation": "manual-all-fences"
     },
     "EXECUTABLE-EXAMPLES.md": {
