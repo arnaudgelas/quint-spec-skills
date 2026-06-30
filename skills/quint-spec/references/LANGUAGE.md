@@ -133,12 +133,15 @@ All conditions must hold and all updates apply atomically.
 
 ```quint sketch
 action transfer(from: Address, receiver: Address, amount: int): bool = all {
-  balances.keys().contains(from),           // guard
-  balances.get(from) >= amount,             // guard
+  balances.keys().contains(from),           // guard: sender must exist
+  balances.get(from) >= amount,             // guard: sufficient balance
   amount > 0,                               // guard
-  balances' = balances                      // update
-    .setBy(from, b => b - amount)
-    .setBy(receiver, b => b + amount),
+  // Use put, not setBy: setBy fails if the key is absent.
+  // The receiver may have no prior entry in the map.
+  balances' = balances
+    .put(from, balances.get(from) - amount)
+    .put(receiver,
+      (if (balances.keys().contains(receiver)) balances.get(receiver) else 0) + amount),
 }
 ```
 
