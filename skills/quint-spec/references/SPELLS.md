@@ -159,7 +159,11 @@ module MyProtocol {
 When building spells for your protocol:
 
 1. Use `pure def` -- spells should be stateless functions
-2. Make them generic where possible (use type parameters if Quint supports them for your use case)
+2. **Quint v0.32.0 does not support type parameters on `pure def` functions.**
+   The syntax `pure def f[a](x: a): a` is a parse error. Type parameters are only
+   supported on type definitions (`type Option[a] = Some(a) | None`). The helpers
+   above use concrete types (`Set[int]`, `List[int]`) intentionally; if you need
+   the same logic for `Set[str]` or `Set[Address]`, write a domain-specific copy.
 3. Keep them in a separate module for reuse
 4. Document the expected behavior and edge cases
 5. Test spells independently before using in protocol actions
