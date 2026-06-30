@@ -49,6 +49,9 @@ module IntentLifecycle {
   const CHAINS: Set[ChainId]
   const TOKENS: Set[str]
   const MAX_AMOUNT: int
+  // Seed each (chain, addr, token) tuple with INITIAL_BALANCE so that
+  // createIntent and fillIntent guards are satisfiable from the initial state.
+  const INITIAL_BALANCE: int
 
   var intents: IntentId -> Intent
   var status: IntentId -> Status
@@ -64,7 +67,14 @@ module IntentLifecycle {
     intents' = Map(),
     status' = Map(),
     fills' = Map(),
-    balances' = Map(),
+    // Seed balances for all participants so actions are reachable.
+    balances' = CHAINS.fold(Map(), (acc, c) =>
+      USERS.union(SOLVERS).fold(acc, (acc2, addr) =>
+        TOKENS.fold(acc2, (acc3, tok) =>
+          acc3.put((c, addr, tok), INITIAL_BALANCE)
+        )
+      )
+    ),
     nextIntentId' = 1,
     currentHeight' = 1,
   }
@@ -250,7 +260,9 @@ module SolverCompetition {
     fillNext(solver)
   }
 
-  // Fairness: no solver fills more than 2x the average
+  // Bounded distribution check: no solver fills more than 2x the average under
+  // nondeterministic free choice. This is NOT a proof of economic fairness or
+  // scheduler guarantees -- it checks bounded distribution when solvers act freely.
   // (only meaningful when enough intents have been filled)
   val solverFairness =
     val totalFills = SOLVERS.fold(0, (sum, s) => sum + fillCount(s))

@@ -54,6 +54,8 @@ module ICS20 {
   const DENOMS: Set[Denom]
   const MAX_AMOUNT: int
   const MAX_HEIGHT: int
+  // Seed each user's balance so that sendTransfer is reachable from init.
+  const INITIAL_BALANCE: int
 
   var chains: ChainId -> ChainState
   var inflight: Set[Packet]      // Packets sent but not yet received/timed out
@@ -83,8 +85,9 @@ module ICS20 {
   }
 
   action init = all {
+    // Seed user balances so sendTransfer actions are reachable from the initial state.
     chains' = CHAINS.mapBy(c => {
-      balances: Map(),
+      balances: USERS.mapBy(u => DENOMS.mapBy(d => INITIAL_BALANCE)),
       escrow: Map(),
       height: 1,
       nextSeqSend: Map(),
