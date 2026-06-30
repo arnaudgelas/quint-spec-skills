@@ -68,6 +68,11 @@ module IntentLifecycle {
     status' = Map(),
     fills' = Map(),
     // Seed balances for all participants so actions are reachable.
+    // The .setBy() calls in createIntent/fillIntent/settleIntent/expireIntent
+    // are safe only because every (chain, addr, token) key is pre-populated here.
+    // Apalache note: nested folds create O(|CHAINS|*|USERS|*|TOKENS|) SMT
+    // constraints at init. Keep each constant set to ≤2 elements for tractable
+    // model checking; larger sets will cause Apalache to run out of memory.
     balances' = CHAINS.fold(Map(), (acc, c) =>
       USERS.union(SOLVERS).fold(acc, (acc2, addr) =>
         TOKENS.fold(acc2, (acc3, tok) =>
@@ -215,6 +220,34 @@ module IntentLifecycle {
     ((s == Settled) implies fills.keys().contains(id)) and
     ((s == Expired) implies not(fills.keys().contains(id)))
   )
+
+  // Token conservation: for each (chain, token), the sum of all participant
+  // balances plus the amounts locked in Pending or Filled intents (not yet
+  // settled or expired) equals the initial supply.
+  // This invariant catches double-spend and leakage bugs in the
+  // locking/settlement transitions that the structural invariants above miss.
+  //
+  // Note: input tokens are locked from createIntent until settleIntent/expireIntent.
+  // Filled intents still hold the lock (released only at settleIntent).
+  // Output tokens on the dest chain are NOT separately locked -- they are
+  // transferred directly from the solver's balance at fillIntent.
+  val totalBalanceConserved =
+    val supply = USERS.union(SOLVERS).size() * INITIAL_BALANCE
+    TOKENS.forall(tok =>
+      CHAINS.forall(chain =>
+        val circulating = USERS.union(SOLVERS).fold(0, (sum, addr) =>
+          sum + getBalance(chain, addr, tok))
+        val locked = intents.keys().fold(0, (sum, id) =>
+          val intent = intents.get(id)
+          val s = status.get(id)
+          if ((s == Pending or s == Filled) and
+              intent.sourceChain == chain and
+              intent.inputToken == tok)
+            sum + intent.inputAmount
+          else sum)
+        circulating + locked == supply
+      )
+    )
 }
 ```
 
