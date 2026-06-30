@@ -1,7 +1,9 @@
-# Proven Quint Patterns
+# Quint Modeling Patterns
 
-Patterns extracted from production specifications including Cosmos Bank, ICS-20,
-CCV (Cross-Chain Validation), Neutron DEX, Timewave Vault, and ZKSync Governance.
+Patterns drawn from specifications including Cosmos Bank, ICS-20, CCV
+(Cross-Chain Validation), Neutron DEX, Timewave Vault, and ZKSync Governance.
+Snippets carry fence labels (`executable`, `illustrative`, `sketch`) indicating
+their validation status -- check the label before copying code.
 
 For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 
@@ -32,7 +34,8 @@ module TokenTransferTest {
 }
 ```
 
-**When to use:** Always. Every spec should separate parameters from logic.
+**When to use:** For any spec intended for verification or reuse. Small
+one-off examples or educational snippets may keep constants inline.
 
 ---
 
@@ -105,7 +108,8 @@ action step = {
 }
 ```
 
-**When to use:** Always in the main spec module. This defines the state exploration space.
+**When to use:** In any spec where the model checker must explore transitions.
+Deterministic `run` blocks do not require a `step` action.
 
 ---
 

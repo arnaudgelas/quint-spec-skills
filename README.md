@@ -4,7 +4,7 @@ An AI skill for building formal [Quint](https://quint.sh/) specifications to mod
 
 ## Overview
 
-When activated, this skill guides an AI agent through a rigorous workflow to build, test, and formally verify system specifications, then bridge the model to actual code where useful:
+When activated, this skill guides an AI agent through a rigorous workflow to build, test, and bound-check system specifications (full proofs require inductive invariants or a finite-state TLC run), then bridge the model to actual code where useful:
 
 1.  **System/Protocol Analysis** - Extract state, participants, messages, and transitions.
 2.  **Domain Modeling** - Define precise types using sum types, records, and aliases.
@@ -15,9 +15,9 @@ When activated, this skill guides an AI agent through a rigorous workflow to bui
 7.  **Verification** - Run simulations and bounded model checking via Apalache (or full coverage with TLC/inductive invariants).
 8.  **Implementation Mapping** - Map Quint types and actions to specific implementation code.
 9.  **Model-Based Testing & Fuzzing** - Generate test runners to replay Quint traces against the target stack.
-10. **Refinement Modeling** - Prove that low-level models correctly implement abstract ones.
-11. **Liveness & Fairness** - Prove that something good eventually happens (liveness).
-12. **Spec-Driven Boilerplate Generation** - Generate code skeletons (Solidity/Go/Rust) from verified specs.
+10. **Refinement Modeling** - Check whether low-level models correctly implement abstract ones (bounded, unless inductive invariants are used).
+11. **Liveness & Fairness** - Check bounded liveness properties via TLC/Apalache (`--max-steps` bounds exploration depth).
+12. **Spec-Driven Boilerplate Generation** - Generate code skeletons (Solidity/Go/Rust) from type-checked Quint specs.
 13. **Specification Visualization** - Auto-generate Mermaid diagrams for documentation.
 
 ## Agent Compatibility
@@ -100,7 +100,7 @@ Mention any of these phrases to your AI agent to activate the workflow:
 
 - _"Write a Quint spec for..."_
 - _"Formal spec for this [system/protocol/logic]"_
-- _"Prove correctness of [Logic/AMM/Bridge]"_
+- _"Check properties of [Logic/AMM/Bridge]"_
 - _"Model check this state machine"_
 - _"Specify the safety properties for..."_
 - _"What invariants should this system have?"_
@@ -168,7 +168,7 @@ skills/quint-spec/
 ├── SKILL.md                 # Core skill entry point (Workflow & Rules)
 └── references/              # Specialized knowledge base
     ├── LANGUAGE.md          # Quint syntax quick-ref
-    ├── PATTERNS.md          # 18+ production-proven design patterns
+    ├── PATTERNS.md          # 18+ field-tested modeling patterns
     ├── GENERIC-TEMPLATE.md  # Workflow & Resource allocation starters
     ├── SYSTEM-ARCH-TEMPLATE.md # Multi-service & Locking starters
     ├── DEFI-TEMPLATE.md     # AMM/Vault/Lending starters

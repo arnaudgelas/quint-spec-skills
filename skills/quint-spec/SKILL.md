@@ -4,8 +4,8 @@ description: >
   Build formal Quint specifications to model, test, simulate, and verify
   properties of software systems, distributed protocols, or complex logic. Use
   this skill when a user mentions "quint", "formal spec", "model check",
-  "specify protocol", "invariant", "state machine", "safety property", or
-  wants to verify system logic.
+  "specify protocol", "safety property", "formal state machine", or
+  wants to verify system logic with Quint or Apalache.
 metadata:
   author: zmanian
   version: 0.2.0
@@ -134,7 +134,7 @@ stronger fairness claims, add explicit fairness assumptions. See
 
 ### Phase 12: Spec-Driven Boilerplate Generation (Advanced)
 
-Convert verified Quint types and guards to implementation skeletons. Generated code
+Convert type-checked Quint types and guards to implementation skeletons. Generated code
 is a starting point, not a verified implementation. See `references/ADVANCED-TOPICS.md`.
 
 ### Phase 13: Specification Visualization
@@ -164,7 +164,8 @@ Read the relevant reference file **before** writing any Quint for the domain:
 7. **Unsafe Map Access** -- `Map.get(key)` and `.setBy(key, f)` both fail on missing keys.
    Always guard with `.keys().contains(key)` or use a safe `getOrDefault`/`addBalance` helper.
 
-See `references/PATTERNS.md` for 18+ proven design patterns from production Quint specs.
+See `references/PATTERNS.md` for 18+ field-tested modeling patterns. Check each
+snippet's fence label (`executable`/`illustrative`/`sketch`) before use.
 
 ## Modeling Limits
 
