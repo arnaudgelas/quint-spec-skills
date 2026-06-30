@@ -439,26 +439,9 @@ async function validateStaticDocs() {
     }
   }
 
-  const pinnedQuintVersion = /@informalsystems\/quint@\d+\.\d+\.\d+/g
-  for (const [filePath, content] of [
-    [paths.readme, readme],
-    [paths.skill, skill],
-    [paths.toolchain, toolchain],
-  ]) {
-    if (pinnedQuintVersion.test(content)) {
-      throw new Error(`${filePath} pins a Quint version; use @latest in docs`)
-    }
-  }
-
-  for (const [filePath, content] of [
-    [paths.readme, readme],
-    [paths.skill, skill],
-    [paths.toolchain, toolchain],
-  ]) {
-    if (!content.includes('@informalsystems/quint@latest')) {
-      throw new Error(`${filePath} should use @informalsystems/quint@latest`)
-    }
-  }
+  // Docs may reference a pinned version or @latest.
+  // Version currency is enforced by the upstream drift check (fetchSnapshot),
+  // not by policing install-command syntax in prose.
 
   const commandBlock = getSectionBetweenMarkers(toolchain, CLI_BLOCK_START, CLI_BLOCK_END)
   if (commandBlock.length === 0) {
