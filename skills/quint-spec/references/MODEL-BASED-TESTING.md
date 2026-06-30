@@ -84,6 +84,20 @@ When requested, generate a custom test runner in the user's specific stack (e.g.
 > - Treat ITF traces as coming from trusted sources only (your own verified specs, not
 >   user-supplied files).
 
+> **State synchronization drift:** Step-by-step trace replay accumulates divergence.
+> Each step applies an implementation action and then asserts the implementation state
+> matches the Quint state. If the mapping is off by even 1 unit at step N (e.g., from
+> integer division rounding or a uint256 overflow that Quint's `int` does not model),
+> the assertion at step N+1 compares against the *wrong expected state*, and every
+> subsequent assertion may pass for the wrong reason. Mitigations:
+>
+> - Assert strict equality on *all* mapped state variables at every step, not just the
+>   variables the current action touches.
+> - Run the runner on known-bad traces (where the spec and implementation deliberately
+>   diverge) to verify the harness actually catches divergence.
+> - Prefer short traces (≤20 steps) for initial validation; extend only after the
+>   per-step assertions are confirmed tight.
+
 ### The Runner Architecture
 
 Every test runner needs four components:
