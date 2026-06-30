@@ -389,10 +389,16 @@ module Lending {
   action liquidate(liquidator: Address, user: Address): bool = {
     val debt = amountOf(borrows, user)
     val coll = amountOf(collateral, user)
+    // Integer division truncates toward zero.  For dust debt relative to asset
+    // price (e.g. debt=1, oraclePrice=200, LIQUIDATION_BONUS=5):
+    //   1 * 105 / 20000 = 0
+    // Without seizedCollateral > 0, a liquidator clears debt while seizing
+    // zero collateral -- a well-known dust-debt exploit in DeFi lending.
     val seizedCollateral = debt * (100 + LIQUIDATION_BONUS) / (oraclePrice * 100)
     all {
       debt > 0,
       healthFactor(coll, debt, oraclePrice) < COLLATERAL_FACTOR,
+      seizedCollateral > 0,   // prevent zero-collateral debt clearance
       seizedCollateral <= coll,
       collateral' = collateral.put(user, coll - seizedCollateral),
       borrows' = borrows.put(user, 0),
