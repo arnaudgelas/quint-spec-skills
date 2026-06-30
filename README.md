@@ -187,7 +187,7 @@ skills/quint-spec/
 ## References
 
 - [Quint Language](https://quint.sh/)
-- [Quint GitHub](https://github.com/informalsystems/quint)
+- [Quint GitHub](https://github.com/quint-co/quint)
 - [Apalache Model Checker](https://apalache-mc.org/)
 
 ## License
