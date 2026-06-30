@@ -52,6 +52,10 @@
     "TOOLCHAIN.md": {
       "quintFencePolicy": "none",
       "validationExpectation": "manual-all-fences"
+    },
+    "WORKFLOW.md": {
+      "quintFencePolicy": "mixed",
+      "validationExpectation": "manual-all-fences"
     }
   }
 }
