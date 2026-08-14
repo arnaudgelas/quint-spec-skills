@@ -51,7 +51,19 @@ quint test spec.qnt --match deposit
 
 **Example `run` block:**
 
-```quint sketch
+<!-- quint-preamble
+var totalAssets: int
+var userShares: str -> int
+def amountOf(m: str -> int, k: str): int =
+  if (m.keys().contains(k)) m.get(k) else 0
+action init = all { totalAssets' = 0, userShares' = Map() }
+action deposit(u: str, n: int): bool = all {
+  totalAssets' = totalAssets + n, userShares' = userShares.put(u, amountOf(userShares, u) + n) }
+action withdraw(u: str, n: int): bool = all {
+  totalAssets' = totalAssets - n, userShares' = userShares.put(u, amountOf(userShares, u) - n) }
+-->
+
+```quint illustrative
 run depositWithdrawRoundTripTest =
   init
     .then(deposit("alice", 100))

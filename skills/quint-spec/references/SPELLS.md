@@ -145,12 +145,32 @@ module defiSpells {
 
 Import spells into your specification modules:
 
-```quint sketch
+<!-- quint-preamble
+module basicSpells {
+  pure def require(cond: bool): bool = cond
+}
+
+module defiSpells {
+  pure def getBalance(bals: str -> (str -> int), addr: str, denom: str): int =
+    if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
+      bals.get(addr).get(denom) else 0
+  pure def transferBalance(
+    bals: str -> (str -> int), from: str, receiver: str, denom: str, amount: int
+  ): str -> (str -> int) = bals
+}
+-->
+
+```quint illustrative
 module MyProtocol {
   import basicSpells.*
   import defiSpells.*
 
   // Now use: max, min, abs, getBalance, transferBalance, etc.
+
+  var balances: str -> (str -> int)
+  var totalSupply: str -> int
+
+  action init = all { balances' = Map(), totalSupply' = Map() }
 
   action transfer(from: str, receiver: str, denom: str, amount: int): bool = all {
     require(amount > 0),

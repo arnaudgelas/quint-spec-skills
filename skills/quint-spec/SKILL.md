@@ -172,8 +172,15 @@ Read the relevant reference file **before** writing any Quint for the domain:
 7. **Unsafe Map Access** -- `Map.get(key)` and `.setBy(key, f)` both fail on missing keys.
    Always guard with `.keys().contains(key)` or use a safe `getOrDefault`/`addBalance` helper.
 
-See `references/PATTERNS.md` for 18+ field-tested modeling patterns. Check each
-snippet's fence label (`executable`/`illustrative`/`sketch`) before use.
+See `references/PATTERNS.md` for 18 modeling patterns. Every Quint snippet in
+this skill is type-checked against the pinned toolchain in CI, so the code is
+safe to copy as-is.
+
+Reference files contain `<!-- quint-preamble ... -->` comments before some
+snippets. These supply declarations the snippet assumes (a type alias, a `var`)
+so CI can compile it in isolation. **They are validation scaffolding, not part
+of the pattern** -- read them if you need to know a name's type, but do not copy
+them into a spec that already declares those names.
 
 ## Modeling Limits
 

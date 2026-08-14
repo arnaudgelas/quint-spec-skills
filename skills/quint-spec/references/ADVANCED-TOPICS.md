@@ -118,7 +118,13 @@ To prove liveness, you often need to assume **Fairness**: that if an action is e
 > error and no warning** while being meaningless. This is a silent failure: nothing
 > in the toolchain will tell you the fairness assumption is malformed.
 
-```quint sketch
+<!-- quint-preamble
+var balances: int
+var totalSupply: int
+action step = all { balances' = balances, totalSupply' = totalSupply }
+-->
+
+```quint illustrative
 // CORRECT -- a set of every variable the action may change
 temporal fairStep = weakFair(step, Set(balances, totalSupply))
 
@@ -129,7 +135,14 @@ temporal fairStep = weakFair(step, Set(balances, totalSupply))
 A fairness constraint is only useful as an antecedent. State it as
 `fairness.implies(property)`, never as a standalone `temporal`:
 
-```quint sketch
+<!-- quint-preamble
+var balances: int
+var totalSupply: int
+action step = all { balances' = balances, totalSupply' = totalSupply }
+val allSettled = balances == 0
+-->
+
+```quint illustrative
 temporal fairness = weakFair(step, Set(balances, totalSupply))
 temporal eventuallySettles = fairness.implies(eventually(allSettled))
 ```
@@ -138,7 +151,13 @@ temporal eventuallySettles = fairness.implies(eventually(allSettled))
 
 Use `temporal`, `always`, `eventually`, and `leadsTo` (v0.32.0) to define liveness:
 
-```quint sketch
+<!-- quint-preamble
+type Status = Pending | Settled | Expired
+var intents: int -> str
+var status: int -> Status
+-->
+
+```quint illustrative
 // Leads-to: whenever a Pending intent exists, it eventually resolves
 temporal intentsResolve =
   always(
@@ -192,7 +211,12 @@ Once a Quint specification is verified, use it to generate the **Interface** or 
 
 **Example: Quint to Solidity**
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+var balances: Address -> int
+-->
+
+```quint illustrative
 // Quint Action
 action deposit(sender: Address, amount: int): bool = all {
   amount > 0,

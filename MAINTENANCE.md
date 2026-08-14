@@ -15,13 +15,44 @@
   block. Not deep-typechecked -- but still subject to the hard-error gate below.
 - Unlabeled `\`\`\`quint` fences are not allowed in CI (`--strict-labels`).
 
-**Promote `sketch` to `illustrative` whenever the block typechecks standalone.**
-`sketch` is an escape hatch for genuine fragments, not a way to skip validation.
-Check with:
+**There are currently ZERO `sketch` fences: all 81 Quint blocks are deep-typechecked
+in CI.** Keep it that way. `sketch` is an escape hatch for a block that genuinely
+cannot be made to compile, not a way to skip validation. Check with:
 
 ```bash
 node scripts/validate-quint-snippets.mjs --all --typecheck
 ```
+
+### Hidden preambles
+
+A snippet that reads well often omits declarations it depends on -- a type alias,
+`balances`, `USERS`. Rather than bloat the page or give up on checking it, attach
+the declarations in an HTML comment immediately before the fence. Markdown drops
+it, the reader never sees it, and the validator compiles the block with it (the
+same trick Rust doctests use with `#` lines):
+
+Written as an indented example (the fence line is the usual ` ```quint ` one):
+
+    <!-- quint-preamble
+    type Address = str
+    var balances: Address -> int
+    -->
+
+    ```quint illustrative
+    action deposit(a: Address, n: int): bool = all {
+      balances' = balances.put(a, n),
+    }
+    ```
+
+Rules:
+
+- The comment must be the last thing before the fence (only whitespace between).
+- For a fragment, the preamble is placed **inside** the synthesized wrapper module.
+- If the preamble itself declares `module`s, they are emitted **beside** the
+  wrapper -- that is how a bare `import Foo.*` snippet gets its dependency.
+- Preamble code is real Quint and is compiled. Keep it minimal and correct: a
+  sloppy preamble (wrong arity, a parameter named `to`) fails the build, which is
+  the point.
 
 ## Validation floors (these apply to EVERY block, regardless of label)
 

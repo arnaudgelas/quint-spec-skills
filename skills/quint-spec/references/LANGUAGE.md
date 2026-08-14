@@ -88,7 +88,13 @@ pure def abs(x: int): int = if (x >= 0) x else -x
 
 Can read state (no primes). Used for derived values and invariants.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+const ADDRESSES: Set[Address]
+var balances: Address -> int
+-->
+
+```quint illustrative
 val totalBalance =
   ADDRESSES.fold(0, (sum, a) => sum + if (balances.keys().contains(a)) balances.get(a) else 0)
 def balanceOf(addr: Address): int = if (balances.keys().contains(addr)) balances.get(addr) else 0
@@ -98,7 +104,15 @@ def balanceOf(addr: Address): int = if (balances.keys().contains(addr)) balances
 
 Can read and write state (primes allowed). Represents state transitions.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+var balances: Address -> int
+var totalDeposits: int
+def balanceOf(a: Address): int =
+  if (balances.keys().contains(a)) balances.get(a) else 0
+-->
+
+```quint illustrative
 action deposit(sender: Address, amount: int): bool = all {
   amount > 0,
   balances' = balances.setBy(sender, b => b + amount),
@@ -110,7 +124,12 @@ action deposit(sender: Address, amount: int): bool = all {
 
 For temporal logic properties (liveness, fairness).
 
-```quint sketch
+<!-- quint-preamble
+var status: str
+val balancesConserved = status != "broken"
+-->
+
+```quint illustrative
 temporal eventuallySettled = eventually(status == "settled")
 temporal alwaysConserved = always(balancesConserved)
 ```
@@ -131,7 +150,12 @@ action increment = all {
 
 **Rule:** Every action must assign ALL `var` variables. If unchanged:
 
-```quint sketch
+<!-- quint-preamble
+var counter: int
+var otherVar: int
+-->
+
+```quint illustrative
 action incrementOnlyCounter = all {
   counter' = counter + 1,
   otherVar' = otherVar,    // Frame condition: explicitly unchanged
@@ -144,7 +168,12 @@ action incrementOnlyCounter = all {
 
 All conditions must hold and all updates apply atomically.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+var balances: Address -> int
+-->
+
+```quint illustrative
 action transfer(from: Address, receiver: Address, amount: int): bool = all {
   balances.keys().contains(from),           // guard: sender must exist
   balances.get(from) >= amount,             // guard: sufficient balance
@@ -169,7 +198,20 @@ action transfer(from: Address, receiver: Address, amount: int): bool = all {
 
 Nondeterministic choice: exactly one branch is taken.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+var pot: int
+pure val sender: Address = "alice"
+pure val amount = 1
+pure val shares = 1
+pure val tokenIn = "uatom"
+pure val amountIn = 1
+action deposit(s: Address, n: int): bool = pot' = pot + n
+action withdraw(s: Address, n: int): bool = pot' = pot - n
+action swap(s: Address, t: str, n: int): bool = pot' = pot
+-->
+
+```quint illustrative
 action step = any {
   deposit(sender, amount),
   withdraw(sender, shares),
@@ -181,7 +223,15 @@ action step = any {
 
 Selects a value nondeterministically from a set. Model checker explores all choices.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+const ADDRESSES: Set[Address]
+var pot: int
+action deposit(s: Address, n: int): bool = pot' = pot + n
+action withdraw(s: Address, n: int): bool = pot' = pot - n
+-->
+
+```quint illustrative
 action step = {
   nondet sender = ADDRESSES.oneOf()
   nondet amount = 1.to(100).oneOf()
@@ -223,7 +273,14 @@ module BankTypes {
 
 ### Import
 
-```quint sketch
+<!-- quint-preamble
+module BankTypes {
+  type Address = str
+  type Amount = int
+}
+-->
+
+```quint illustrative
 import BankTypes.*                    // Import all from module
 import BankTypes.Address              // Import specific type
 import BankTypes as BT                // Qualified import: BT.Address
@@ -231,7 +288,14 @@ import BankTypes as BT                // Qualified import: BT.Address
 
 ### Export
 
-```quint sketch
+<!-- quint-preamble
+module BankModule {
+  type Account = str
+  pure val VERSION = 1
+}
+-->
+
+```quint illustrative
 module Facade {
   import BankModule.*
   export BankModule.*                 // Re-export for downstream consumers
@@ -362,7 +426,19 @@ mustChange(A, Set(x))                 // <A>_vars: A takes a step AND vars chang
 
 ## Run Traces (Tests)
 
-```quint sketch
+<!-- quint-preamble
+var v: int
+pure val arg1 = 1
+pure val arg2 = 2
+pure val arg3 = 3
+action init = v' = 0
+action action1(a: int, b: int): bool = v' = v + a + b
+action action2(a: int): bool = v' = v + a
+val property1 = v >= 0
+val property2 = v >= 0
+-->
+
+```quint illustrative
 run myTest =
   init
     .then(action1(arg1, arg2))
@@ -386,7 +462,15 @@ run myTest =
 
 ## Common Idioms
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type Denom = str
+const MAX_AMOUNT: int
+pure val myTuple = (1, 2)
+var chosen: int
+-->
+
+```quint illustrative
 // Safe balance lookup (nested map)
 pure def getBalance(bals: Address -> (Denom -> int), addr: Address, denom: Denom): int =
   if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
@@ -397,8 +481,12 @@ pure def getBalance(bals: Address -> (Denom -> int), addr: Address, denom: Denom
 // Require pattern (guard helper)
 pure def require(cond: bool): bool = cond
 
-// Integer set range for nondeterminism
-nondet amount = 1.to(MAX_AMOUNT).oneOf()
+// Integer set range for nondeterminism. `nondet` is ONLY valid inside an
+// action -- at the top level it is QNT206 ("'nondet' can only be used inside
+// actions"), even though the file still parses.
+action pickAmount: bool =
+  nondet amount = 1.to(MAX_AMOUNT).oneOf()
+  chosen' = amount
 
 // Tuple destructuring
 val (x, y) = myTuple
@@ -462,7 +550,16 @@ n.reps(_ => A)                       // Repeat action A n times (ignoring index)
 
 When importing with `as Name`, access definitions via the `::` separator:
 
-```quint sketch
+<!-- quint-preamble
+module BankModule {
+  const ADDRESSES: Set[str]
+  const DENOMS: Set[str]
+  var balances: str -> int
+  action init = balances' = Map()
+}
+-->
+
+```quint illustrative
 module BankTest {
   import BankModule(
     ADDRESSES = Set("alice", "bob"),

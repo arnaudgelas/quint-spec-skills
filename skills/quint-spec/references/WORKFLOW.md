@@ -87,7 +87,15 @@ must be declared with `var`. Immutable protocol parameters use `const` or `pure 
 - Use `const` for protocol parameters that vary between instances
 - Consider ghost variables for verification (variables that track properties but don't affect protocol logic)
 
-```quint sketch
+<!-- quint-preamble
+module MyProtocolTypes {
+  type Address = str
+  type Denom = str
+  type Amount = int
+}
+-->
+
+```quint illustrative
 module MyProtocol {
   import MyProtocolTypes.*
 
@@ -131,7 +139,23 @@ update state atomically.
 - **Map safety**: Use a safe `addBalance`-style helper for nested maps.
   Both `.get(key)` and `.setBy(key, f)` fail at runtime if the key is absent.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type Denom = str
+type Amount = int
+const ADDRESSES: Set[Address]
+const DENOMS: Set[Denom]
+const MAX_AMOUNT: int
+var balances: Address -> (Denom -> Amount)
+var totalSupply: Denom -> Amount
+var ghostTotalMinted: Denom -> Amount
+action mint(s: Address, d: Denom, n: Amount): bool = all {
+  balances' = balances, totalSupply' = totalSupply, ghostTotalMinted' = ghostTotalMinted }
+action burn(s: Address, d: Denom, n: Amount): bool = all {
+  balances' = balances, totalSupply' = totalSupply, ghostTotalMinted' = ghostTotalMinted }
+-->
+
+```quint illustrative
 // Safe helper: add delta to a nested balance map without key-existence failures
 pure def addBalance(
   bals: Address -> (Denom -> Amount),
@@ -204,7 +228,17 @@ what verification actually checks.
   define it, or use `withinTolerance` from SPELLS.md:
   `pure def abs(x: int): int = if (x < 0) -x else x`
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type Denom = str
+type Amount = int
+const ADDRESSES: Set[Address]
+const DENOMS: Set[Denom]
+var balances: Address -> (Denom -> Amount)
+var totalSupply: Denom -> Amount
+-->
+
+```quint illustrative
 pure def balanceOf(
   bals: Address -> (Denom -> Amount),
   addr: Address,
@@ -258,7 +292,35 @@ documentation and sanity checks before full verification.
   `quint test` runs only `run` definitions matching `*Test` and skips the rest
   silently with exit 0: `run transferThenBurnTest = ...`
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type Denom = str
+var balances: Address -> (Denom -> int)
+var totalSupply: Denom -> int
+pure def balanceOf(bals: Address -> (Denom -> int), a: Address, d: Denom): int =
+  if (bals.keys().contains(a) and bals.get(a).keys().contains(d))
+    bals.get(a).get(d) else 0
+pure def addBalance(
+  bals: Address -> (Denom -> int), a: Address, d: Denom, delta: int
+): Address -> (Denom -> int) =
+  val acct = if (bals.keys().contains(a)) bals.get(a) else Map()
+  val cur = if (acct.keys().contains(d)) acct.get(d) else 0
+  bals.put(a, acct.put(d, cur + delta))
+def supplyOf(d: Denom): int =
+  if (totalSupply.keys().contains(d)) totalSupply.get(d) else 0
+val balancesConserved = totalSupply.keys().forall(d => supplyOf(d) >= 0)
+action init = all { balances' = Map(), totalSupply' = Map() }
+action mint(a: Address, d: Denom, n: int): bool = all {
+  balances' = addBalance(balances, a, d, n),
+  totalSupply' = totalSupply.put(d, supplyOf(d) + n) }
+action transfer(f: Address, t: Address, d: Denom, n: int): bool = all {
+  balanceOf(balances, f, d) >= n,
+  f != t,
+  balances' = addBalance(addBalance(balances, f, d, -n), t, d, n),
+  totalSupply' = totalSupply }
+-->
+
+```quint illustrative
 run happyPathTest =
   init
     .then(mint("alice", "uatom", 1000))

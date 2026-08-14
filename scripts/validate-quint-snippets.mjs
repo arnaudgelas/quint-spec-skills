@@ -120,6 +120,47 @@ async function getMarkdownFiles() {
   return files
 }
 
+// Hidden preamble support.
+//
+// A `sketch` fence is usually only a fragment because it references names that
+// live elsewhere in the document's narrative -- `balances`, `USERS`, a type
+// alias. Those blocks are perfectly checkable if the missing declarations are
+// supplied, but writing them into the fence would bloat the page an agent reads.
+//
+// So declarations can be attached in an HTML comment immediately before the
+// fence. Markdown renderers drop it, the reader never sees it, and the validator
+// compiles the block WITH it -- the same trick Rust doctests use with `#` lines.
+//
+//   <!-- quint-preamble
+//   type Address = str
+//   var balances: Address -> int
+//   -->
+//   ```quint sketch
+//   action deposit(a: Address, n: int): bool = all { ... }
+//   ```
+//
+// The preamble is placed inside the synthesized wrapper module for a fragment,
+// or verbatim BEFORE the code for a block that declares its own module(s) --
+// which is how a snippet that does `import BankModule.*` gets its dependency.
+const PREAMBLE_OPEN = '<!-- quint-preamble'
+
+function preambleFor(content, fenceStartIndex) {
+  const before = content.slice(0, fenceStartIndex)
+  // Anchor on the LAST opener, then require that its `-->` is the final thing
+  // before the fence. A leftmost regex match would start at the first preamble
+  // in the file and swallow every one in between.
+  const open = before.lastIndexOf(PREAMBLE_OPEN)
+  if (open < 0) return ''
+  const close = before.indexOf('-->', open)
+  if (close < 0) return ''
+  // Nothing but whitespace may separate the comment from the fence.
+  if (before.slice(close + 3).trim() !== '') return ''
+  return before
+    .slice(open + PREAMBLE_OPEN.length, close)
+    .replace(/^[ \t]*\r?\n/, '')
+    .trimEnd()
+}
+
 function extractQuintBlocks(content) {
   const blocks = []
   const regex = /^[ \t]{0,3}```quint(?:\s+([^\n`]+))?\s*\n([\s\S]*?)^[ \t]{0,3}```[ \t]*$/gm
@@ -154,6 +195,7 @@ function extractQuintBlocks(content) {
       kind,
       labels,
       code: match[2],
+      preamble: preambleFor(content, match.index),
     })
   }
   return blocks
@@ -409,10 +451,20 @@ async function validate() {
         if (block.kind === 'unlabeled') unlabeledBlocks++
         if (block.kind === 'sketch') sketchBlocks++
 
-        // Wrap in a dummy module if it doesn't look like one
-        let quintCode = block.code
-        if (!declaresModule(block.code)) {
-          quintCode = `module ValidationBlock${totalQuintBlocks} {\n${block.code}\n}`
+        // Wrap in a dummy module if it doesn't look like one, folding in any
+        // hidden preamble: inside the wrapper for a fragment, before the code
+        // for a block that declares its own modules.
+        let quintCode
+        if (declaresModule(block.code)) {
+          quintCode = block.preamble ? `${block.preamble}\n\n${block.code}` : block.code
+        } else if (declaresModule(block.preamble)) {
+          // The preamble supplies whole modules (e.g. the module a bare
+          // `import Foo.*` fragment depends on). Those must sit BESIDE the
+          // wrapper, not inside it -- Quint has no nested modules.
+          quintCode = `${block.preamble}\n\nmodule ValidationBlock${totalQuintBlocks} {\n${block.code}\n}`
+        } else {
+          const body = block.preamble ? `${block.preamble}\n${block.code}` : block.code
+          quintCode = `module ValidationBlock${totalQuintBlocks} {\n${body}\n}`
         }
 
         // ---- val-scope leak lint: runs on EVERY block, including `sketch` ----

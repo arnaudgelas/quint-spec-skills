@@ -44,7 +44,12 @@ one-off examples or educational snippets may keep constants inline.
 Model asynchronous communication by accumulating messages into a set, then
 nondeterministically selecting and processing them.
 
-```quint sketch
+<!-- quint-preamble
+type Msg = { id: int, payload: str }
+action handleMessage(m: Msg): bool = true
+-->
+
+```quint illustrative
 var pendingMessages: Set[Msg]
 
 action sendMsg(msg: Msg): bool = all {
@@ -70,7 +75,15 @@ action processOneMessage: bool = {
 Every action consists of guards (boolean preconditions without primes) followed by
 updates (assignments to primed variables). Guards and updates compose with `all`.
 
-```quint sketch
+<!-- quint-preamble
+var balances: str -> int
+var totalLocked: int
+var paused: bool
+def balanceOf(user: str): int =
+  if (balances.keys().contains(user)) balances.get(user) else 0
+-->
+
+```quint illustrative
 action withdraw(user: str, amount: int): bool = all {
   // Guards (no primes)
   amount > 0,
@@ -92,7 +105,14 @@ action withdraw(user: str, amount: int): bool = all {
 The top-level `step` action selects a participant and action nondeterministically.
 The model checker explores all combinations.
 
-```quint sketch
+<!-- quint-preamble
+var pot: int
+action deposit(u: str, n: int): bool = pot' = pot + n
+action withdraw(u: str, n: int): bool = pot' = pot - n
+action transfer(a: str, b: str, n: int): bool = pot' = pot
+-->
+
+```quint illustrative
 val USERS = Set("alice", "bob", "carol")
 val AMOUNTS = 1.to(50)
 
@@ -118,7 +138,14 @@ Deterministic `run` blocks do not require a `step` action.
 Use sum types (variants) to model different message kinds and protocol states.
 Pattern match to handle each case.
 
-```quint sketch
+<!-- quint-preamble
+var handled: int
+action processTransfer(sender: str, receiver: str, denom: str, amount: int): bool =
+  handled' = handled + 1
+action processIca(controller: str, msgs: List[str]): bool = handled' = handled + 1
+-->
+
+```quint illustrative
 type PacketData =
   | TransferData({ sender: str, receiver: str, denom: str, amount: int })
   | IcaExecute({ controller: str, msgs: List[str] })
@@ -162,7 +189,14 @@ pure def computeShares(assets: int, totalAssets: int, totalShares: int): Result 
 Variables that track properties but don't affect protocol behavior. Useful for
 counting events, tracking history, or maintaining running totals for invariants.
 
-```quint sketch
+<!-- quint-preamble
+var balances: str -> int
+def balanceOf(user: str): int =
+  if (balances.keys().contains(user)) balances.get(user) else 0
+val currentTotalBalance = balances.keys().fold(0, (acc, k) => acc + balances.get(k))
+-->
+
+```quint illustrative
 // Ghost: not read by any action's guards
 var ghostTotalDeposited: int
 var ghostTotalWithdrawn: int
@@ -194,7 +228,11 @@ val flowConservation =
 Use spread syntax to update specific fields while keeping others unchanged.
 Especially useful with complex nested state.
 
-```quint sketch
+<!-- quint-preamble
+type Packet = { sequence: int, payload: str }
+-->
+
+```quint illustrative
 type ChainState = {
   balances: str -> int,
   supply: int,
@@ -221,7 +259,12 @@ pure def advanceHeight(state: ChainState): ChainState =
 Maintain auxiliary data structures that track cumulative values for efficient
 invariant checking. From the Neutron DEX specification.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type PoolId = int
+-->
+
+```quint illustrative
 // Track cumulative fees per liquidity position
 var balances: Address -> int
 var cumulativeFees: PoolId -> int
@@ -262,7 +305,16 @@ action collectFees(user: Address, pool: PoolId): bool =
 Write invariants that SHOULD be violated to prove the model is not vacuously
 trivial. If these pass (no violation found), the model is too constrained.
 
-```quint sketch
+<!-- quint-preamble
+const USERS: Set[str]
+var balances: str -> int
+var ghostActionLog: List[str]
+var swapCount: int
+def balanceOf(u: str): int =
+  if (balances.keys().contains(u)) balances.get(u) else 0
+-->
+
+```quint illustrative
 // These should ALL be violated during simulation:
 
 // Witness: some user can have a non-zero balance
@@ -287,25 +339,45 @@ val witnessOnlySingleAction = ghostActionLog.length() <= 1
 For integer arithmetic with rounding, use tolerance bounds instead of exact equality.
 From the Timewave Vault specification.
 
-```quint sketch
+<!-- quint-preamble
+const USERS: Set[str]
+const DEPOSIT_AMOUNTS: Set[int]
+var shares: str -> int
+var totalShares: int
+var totalAssets: int
+def userAssets(u: str): int = if (shares.keys().contains(u)) shares.get(u) else 0
+pure def assetsToShares(a: int, totA: int, totS: int): int =
+  if (totS == 0 or totA == 0) a else a * totS / totA
+pure def sharesToAssets(sh: int, totA: int, totS: int): int =
+  if (totS == 0) 0 else sh * totA / totS
+-->
+
+```quint illustrative
 pure val ROUNDING_TOLERANCE = 1
 
 // Instead of: shares * totalAssets / totalShares == expectedAssets
 // Use: abs(shares * totalAssets / totalShares - expectedAssets) <= ROUNDING_TOLERANCE
 
+// `abs` is NOT a Quint builtin -- define it (or use withinTolerance from SPELLS.md).
+pure def abs(x: int): int = if (x >= 0) x else -x
+
 val shareAccountingSound =
   USERS.forall(user =>
-    val userShares = if (shares.keys().contains(user)) shares.get(user) else 0
+    val userShareCount = if (shares.keys().contains(user)) shares.get(user) else 0
     val expectedAssets = if (totalShares == 0) 0
-      else userShares * totalAssets / totalShares
+      else userShareCount * totalAssets / totalShares
     val actualAssets = userAssets(user)
     abs(actualAssets - expectedAssets) <= ROUNDING_TOLERANCE
   )
 
-// Rounding direction invariant: protocol never gives away free tokens
+// Rounding direction invariant: the protocol never gives away free tokens.
+// Quantify over DEPOSIT AMOUNTS, not over users: `user` is a `str`, so
+// `user.depositAmount` is a type error, and a round trip is a property of an
+// amount rather than of an identity.
 val roundingFavorsProtocol =
-  USERS.forall(user =>
-    sharesToAssets(assetsToShares(user.depositAmount)) <= user.depositAmount
+  DEPOSIT_AMOUNTS.forall(amount =>
+    sharesToAssets(assetsToShares(amount, totalAssets, totalShares), totalAssets, totalShares)
+      <= amount
   )
 ```
 
@@ -319,7 +391,18 @@ any division-heavy arithmetic.
 Model the smart contract execution environment including msg.sender, block context,
 and contract storage. From the ZKSync Governance specification.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type ContractState = { owner: Address, balance: int }
+type DepositMsg = { sender: Address, amount: int }
+type WithdrawMsg = { sender: Address, shares: int }
+type Msg = Deposit(DepositMsg) | Withdraw(WithdrawMsg)
+var handled: int
+action handleDeposit(target: Address, d: DepositMsg): bool = handled' = handled + 1
+action handleWithdraw(target: Address, w: WithdrawMsg): bool = handled' = handled + 1
+-->
+
+```quint illustrative
 type CallContext = {
   msgSender: Address,
   blockNumber: int,
@@ -352,7 +435,13 @@ pure def onlyOwner(ctx: CallContext, contract: ContractState): bool =
 Model multiple chains as a map from chain ID to chain state. Relayers operate
 across chains nondeterministically.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+type Denom = str
+type Packet = { sequence: int, data: { amount: int } }
+-->
+
+```quint illustrative
 type ChainId = str
 
 type ChainState = {
@@ -384,7 +473,17 @@ action relayPacket(srcChain: ChainId, dstChain: ChainId, packet: Packet): bool =
 Model ordered packet delivery using lists as queues. Packets are appended on send
 and consumed from the head on receive.
 
-```quint sketch
+<!-- quint-preamble
+type ChainId = str
+type ChannelId = str
+type PacketData = { amount: int }
+var processed: int
+action processPacketData(chain: ChainId, data: { amount: int }): bool =
+  processed' = processed + 1
+def counterparty(chain: ChainId): ChainId = chain
+-->
+
+```quint illustrative
 type Packet = {
   sequence: int,
   srcChannel: str,
@@ -443,8 +542,11 @@ action receivePacket(chain: ChainId, channel: ChannelId): bool = {
 Organize specifications into keeper-like modules that mirror Cosmos SDK architecture.
 Each module owns its state and exposes actions.
 
-```quint sketch
+```quint illustrative
 module BankKeeper {
+  type Address = str
+  type Denom = str
+
   var balances: Address -> (Denom -> int)
 
   def getBalance(addr: Address, denom: Denom): int =
@@ -508,7 +610,11 @@ module StakingKeeper {
 For values that only increase (block height, sequence numbers, nonces). Invariant
 verifies monotonicity.
 
-```quint sketch
+<!-- quint-preamble
+type Address = str
+-->
+
+```quint illustrative
 var blockHeight: int
 var nonces: Address -> int
 
@@ -587,7 +693,11 @@ val witnessFinished = state != Finished
 
 Track a finite resource shared among participants. Ensures total allocation never exceeds capacity.
 
-```quint sketch
+<!-- quint-preamble
+const USERS: Set[str]
+-->
+
+```quint illustrative
 var allocated: str -> int
 const CAPACITY: int
 

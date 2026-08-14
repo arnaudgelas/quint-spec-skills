@@ -1,8 +1,8 @@
 {
   "files": {
     "ADVANCED-TOPICS.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "DEFI-TEMPLATE.md": {
       "quintFencePolicy": "illustrative",
@@ -29,32 +29,32 @@
       "validationExpectation": "ci-all-fences"
     },
     "LANGUAGE.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "MODEL-BASED-TESTING.md": {
-      "quintFencePolicy": "sketch",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "PATTERNS.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "SPELLS.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "SYSTEM-ARCH-TEMPLATE.md": {
       "quintFencePolicy": "illustrative",
-      "validationExpectation": "manual-all-fences"
+      "validationExpectation": "ci-all-fences"
     },
     "TOOLCHAIN.md": {
       "quintFencePolicy": "none",
       "validationExpectation": "manual-all-fences"
     },
     "WORKFLOW.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     }
   },
   "version": 1
