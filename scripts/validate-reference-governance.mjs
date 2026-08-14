@@ -11,7 +11,14 @@ const referencesDir = path.join(repoRoot, 'skills', 'quint-spec', 'references')
 const governancePath = path.join(referencesDir, 'REFERENCE-GOVERNANCE.json')
 
 const ALLOWED_FENCE_POLICIES = new Set(['none', 'illustrative', 'executable', 'mixed', 'sketch'])
-const ALLOWED_VALIDATION_EXPECTATIONS = new Set(['ci-executable-only', 'manual-all-fences'])
+// 'ci-all-fences' means every quint fence in the file is deep-typechecked by
+// `validate:quint:all:typecheck` in CI -- strictly stronger than
+// 'manual-all-fences', which only asserts a human looked at them.
+const ALLOWED_VALIDATION_EXPECTATIONS = new Set([
+  'ci-executable-only',
+  'ci-all-fences',
+  'manual-all-fences',
+])
 
 function classifyFencePolicy(content) {
   const regex = /^[ \t]{0,3}```quint(?:\s+([^\n`]+))?\s*$/gm
@@ -130,6 +137,12 @@ async function main() {
     if (observed.policy !== fencePolicy) {
       issues.push(
         `${fileName}: declared quintFencePolicy='${fencePolicy}' but observed '${observed.policy}'`,
+      )
+    }
+
+    if (validationExpectation === 'ci-all-fences' && observed.sketch > 0) {
+      issues.push(
+        `${fileName}: validationExpectation='ci-all-fences' but ${observed.sketch} sketch fence(s) are skipped by CI`,
       )
     }
 

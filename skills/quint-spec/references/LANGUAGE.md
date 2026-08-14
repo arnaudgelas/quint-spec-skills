@@ -30,7 +30,7 @@ K -> V        // Map TYPE, e.g. `str -> int`. Value literal: Map("a" -> 1, "b" -
 
 ### Record Types
 
-```quint sketch
+```quint illustrative
 // Named fields
 type Pool = { reserve0: int, reserve1: int, k: int }
 
@@ -53,7 +53,7 @@ pure val bigger2 = p.with("reserve0", 150)
 
 ### Sum Types (Variants)
 
-```quint sketch
+```quint illustrative
 type Option[a] = Some(a) | None
 type Result[a, e] = Ok(a) | Err(e)
 
@@ -419,7 +419,7 @@ Quint has **no `case` expression**. `case (...)` is not in the grammar — it fa
 `QNT000: extraneous input '('` followed by `QNT404: Name 'case' not found`. There are
 exactly two constructs:
 
-```quint sketch
+```quint illustrative
 // 1. Chained if/else for boolean conditions -- the `else` is mandatory
 pure def classify(n: int): str =
   if (n > 100) "large"

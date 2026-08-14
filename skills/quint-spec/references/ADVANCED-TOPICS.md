@@ -27,7 +27,7 @@ Refinement is the process of proving that a detailed **Concrete Model** (with im
 > shown as `stepRefines` below. Do not describe a passing `refinementSafety` as a
 > refinement proof.
 
-```quint sketch
+```quint illustrative
 // Abstract Model: simple atomic balance transfer
 module AbstractBank {
   const USERS: Set[str]

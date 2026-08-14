@@ -10,7 +10,7 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-TEMPLATES.md`.
 
 Models a process that moves through a series of states (e.g., a ticket system, a governance proposal, or a fulfillment pipeline).
 
-```quint sketch
+```quint illustrative
 module WorkflowTypes {
   type RequestId = int
   type Status = Pending | Approved | Rejected | InProgress | Completed | Cancelled
@@ -122,7 +122,7 @@ module Workflow {
 
 A general pattern for managing any finite resource (CPU, memory, permissions, seats) among participants.
 
-```quint sketch
+```quint illustrative
 module ResourceTypes {
   type ResourceId = str
   type Participant = str

@@ -56,7 +56,7 @@ used in Solidity and most EVM contracts.
   _tooling_ limit and not the semantics you are trying to capture. The two are
   independent: guard for the first, keep numbers small for the second.
 
-```quint sketch
+```quint illustrative
 // 0.3% swap fee modeled in basis points (scale = 10,000)
 const FEE_BPS: int    // e.g., 30
 const BPS_DENOM: int  // e.g., 10000

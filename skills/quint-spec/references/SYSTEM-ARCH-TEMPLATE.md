@@ -13,76 +13,116 @@ module MsgTypes {
   type ServiceId = str
   type MsgId = int
   type Payload = str
-  type Msg = { id: MsgId, src: ServiceId, dst: ServiceId, payload: Payload }
+  type MsgKind = Request | Response
+  type Msg = { id: MsgId, src: ServiceId, dst: ServiceId, kind: MsgKind, payload: Payload }
 }
 
 module SystemArch {
   import MsgTypes.*
 
   const SERVICES: Set[ServiceId]
+  pure val NOBODY: ServiceId = ""
 
   var serviceStates: ServiceId -> str
   var inFlightMessages: Set[Msg]
   var msgCounter: MsgId
+  // Correlation: which requester each processor is currently working for.
+  // Without this the model cannot express "someone is handling my request",
+  // and any waiting-related invariant is false the moment a request is consumed.
+  var processingFor: ServiceId -> ServiceId
 
   action init = all {
     serviceStates' = SERVICES.mapBy(s => "Idle"),
     inFlightMessages' = Set(),
     msgCounter' = 1,
+    processingFor' = SERVICES.mapBy(s => NOBODY),
   }
 
-  // Service sends a message
-  action sendMsg(src: ServiceId, dst: ServiceId, payload: Payload): bool = all {
-    SERVICES.contains(src),
-    SERVICES.contains(dst),
-    val msg = { id: msgCounter, src: src, dst: dst, payload: payload }
-    inFlightMessages' = inFlightMessages.union(Set(msg)),
-    msgCounter' = msgCounter + 1,
-    serviceStates' = serviceStates.put(src, "Waiting"),
-  }
+  action sendRequest(src: ServiceId, dst: ServiceId, payload: Payload): bool =
+    val msg = { id: msgCounter, src: src, dst: dst, kind: Request, payload: payload }
+    all {
+      SERVICES.contains(src), SERVICES.contains(dst), src != dst,
+      serviceStates.get(src) == "Idle",
+      inFlightMessages' = inFlightMessages.union(Set(msg)),
+      msgCounter' = msgCounter + 1,
+      serviceStates' = serviceStates.put(src, "Waiting"),
+      processingFor' = processingFor,
+    }
 
-  // Service receives and processes a message
-  action receiveMsg(dst: ServiceId): bool = {
-    // Nondeterministically pick a message destined for this service
-    val myMsgs = inFlightMessages.filter(m => m.dst == dst)
+  action receiveRequest(dst: ServiceId): bool = {
+    val myMsgs = inFlightMessages.filter(m => m.dst == dst and m.kind == Request)
     all {
       myMsgs.size() > 0,
+      serviceStates.get(dst) == "Idle",
       nondet msg = myMsgs.oneOf()
       all {
-        // Simple state update based on message
         serviceStates' = serviceStates.put(dst, "Processing"),
         inFlightMessages' = inFlightMessages.exclude(Set(msg)),
         msgCounter' = msgCounter,
+        processingFor' = processingFor.put(dst, msg.src),
       }
     }
   }
 
-  // Internal service transition
-  action internalTransition(s: ServiceId): bool = all {
-    serviceStates.get(s) == "Processing",
-    serviceStates' = serviceStates.put(s, "Idle"),
-    inFlightMessages' = inFlightMessages,
-    msgCounter' = msgCounter,
-  }
+  action respond(p: ServiceId): bool =
+    val requester = processingFor.get(p)
+    val reply = { id: msgCounter, src: p, dst: requester, kind: Response, payload: "response" }
+    all {
+      serviceStates.get(p) == "Processing",
+      requester != NOBODY,
+      serviceStates' = serviceStates.put(p, "Idle"),
+      inFlightMessages' = inFlightMessages.union(Set(reply)),
+      msgCounter' = msgCounter + 1,
+      processingFor' = processingFor.put(p, NOBODY),
+    }
 
-  action step = {
-    nondet s1 = SERVICES.oneOf()
-    nondet s2 = SERVICES.oneOf()
-    any {
-      sendMsg(s1, s2, "request"),
-      receiveMsg(s1),
-      internalTransition(s1),
+  action receiveResponse(s: ServiceId): bool = {
+    val myReplies = inFlightMessages.filter(m => m.dst == s and m.kind == Response)
+    all {
+      myReplies.size() > 0,
+      nondet msg = myReplies.oneOf()
+      all {
+        serviceStates' = serviceStates.put(s, "Idle"),
+        inFlightMessages' = inFlightMessages.exclude(Set(msg)),
+        msgCounter' = msgCounter,
+        processingFor' = processingFor,
+      }
     }
   }
 
-  // Invariant: If a service is "Waiting", there must be at least one message from it in flight
-  // OR it will eventually transition back to "Idle" when its response is processed.
-  // (Simplified for this template)
+  action step = {
+    nondet a = SERVICES.oneOf()
+    nondet b = SERVICES.oneOf()
+    any { sendRequest(a, b, "request"), receiveRequest(a), respond(a), receiveResponse(a) }
+  }
+
+  // A Waiting service always has an outstanding reason: its request is still
+  // queued, a peer is processing it, or the response is in flight.
   val waitingHasReason = SERVICES.forall(s =>
-    serviceStates.get(s) == "Waiting" implies inFlightMessages.exists(m => m.src == s)
-  )
+    serviceStates.get(s) == "Waiting" implies (
+      inFlightMessages.exists(m => m.kind == Request and m.src == s)
+      or SERVICES.exists(p => processingFor.get(p) == s)
+      or inFlightMessages.exists(m => m.kind == Response and m.dst == s)
+    ))
+
+  // Witness: Waiting must actually be reachable (violated => reachable).
+  val witnessNeverWaiting = SERVICES.forall(s => serviceStates.get(s) != "Waiting")
+}
+
+module SystemArchTest {
+  import SystemArch(SERVICES = Set("s1", "s2")).*
 }
 ```
+
+> **Why the correlation variable exists.** An earlier version of this template
+> asserted `waiting implies inFlightMessages.exists(m => m.src == s)` with no
+> `processingFor`. That invariant is violated in **three steps**: s1 sends (now
+> Waiting, message in flight), s2 receives (message consumed), and s1 is still
+> Waiting with nothing in flight. The model also had no path from `Waiting` back
+> to `Idle`, so a waiting service was stuck forever. If a property about waiting
+> is what you care about, the model must carry the request/response correlation
+> that makes it expressible -- otherwise you are checking a property the model
+> cannot satisfy, and a "violation" tells you nothing about the system.
 
 ---
 

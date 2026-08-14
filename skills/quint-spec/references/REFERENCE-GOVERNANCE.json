@@ -1,13 +1,12 @@
 {
-  "version": 1,
   "files": {
     "ADVANCED-TOPICS.md": {
-      "quintFencePolicy": "sketch",
+      "quintFencePolicy": "mixed",
       "validationExpectation": "manual-all-fences"
     },
     "DEFI-TEMPLATE.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "EXECUTABLE-EXAMPLES.md": {
       "quintFencePolicy": "executable",
@@ -18,16 +17,16 @@
       "validationExpectation": "ci-executable-only"
     },
     "GENERIC-TEMPLATE.md": {
-      "quintFencePolicy": "sketch",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "INTENT-TEMPLATE.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "INTEROP-TEMPLATE.md": {
-      "quintFencePolicy": "mixed",
-      "validationExpectation": "manual-all-fences"
+      "quintFencePolicy": "illustrative",
+      "validationExpectation": "ci-all-fences"
     },
     "LANGUAGE.md": {
       "quintFencePolicy": "mixed",
@@ -57,5 +56,6 @@
       "quintFencePolicy": "mixed",
       "validationExpectation": "manual-all-fences"
     }
-  }
+  },
+  "version": 1
 }

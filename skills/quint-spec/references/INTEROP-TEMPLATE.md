@@ -11,7 +11,7 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 
 Full send/receive/ack/timeout packet flow for fungible token transfers.
 
-```quint sketch
+```quint illustrative
 module ICS20Types {
   type ChainId = str
   type ChannelId = str
@@ -331,41 +331,74 @@ module ThresholdBridge {
   type Message = { nonce: int, payload: str, sourceChain: str }
 
   const VALIDATORS: Set[Validator]
-  const THRESHOLD: int  // m in m-of-n
+  const THRESHOLD: int
+  const MESSAGES: Set[Message]
 
   var signatures: Message -> Set[Validator]
-  var executed: Set[int]  // Nonces of executed messages
+  var executed: Set[Message]
 
   def signers(msg: Message): Set[Validator] =
     if (signatures.keys().contains(msg)) signatures.get(msg) else Set()
 
+  action init = all { signatures' = Map(), executed' = Set() }
+
   action sign(validator: Validator, msg: Message): bool = all {
     VALIDATORS.contains(validator),
-    not(executed.contains(msg.nonce)),
+    not(executed.contains(msg)),
     signatures' = signatures.put(msg, signers(msg).union(Set(validator))),
     executed' = executed,
   }
 
   action execute(msg: Message): bool = all {
     signers(msg).size() >= THRESHOLD,
-    not(executed.contains(msg.nonce)),
-    executed' = executed.union(Set(msg.nonce)),
+    not(executed.contains(msg)),
+    // Nonce uniqueness: refuse a message whose nonce was already consumed by a
+    // DIFFERENT message. Without this, nonce-keyed replay protection and
+    // message-keyed signature accounting disagree.
+    not(executed.exists(e => e.nonce == msg.nonce)),
+    executed' = executed.union(Set(msg)),
     signatures' = signatures,
   }
 
-  // For messages still tracked in signatures: executed nonces required threshold
-  val onlyThresholdExecuted = signatures.keys().forall(msg =>
-    executed.contains(msg.nonce) implies signers(msg).size() >= THRESHOLD
-  )
+  action step = {
+    nondet v = VALIDATORS.oneOf()
+    nondet m = MESSAGES.oneOf()
+    any { sign(v, m), execute(m) }
+  }
 
-  // No two distinct messages with the same nonce are both tracked and executed
-  val noDoubleExecution = signatures.keys().forall(m1 =>
-    signatures.keys().forall(m2 =>
-      (m1.nonce == m2.nonce and executed.contains(m1.nonce)) implies m1 == m2
-    )
-  )
+  val onlyThresholdExecuted = signatures.keys().forall(msg =>
+    executed.contains(msg) implies signers(msg).size() >= THRESHOLD)
+
+  // Quantify over EXECUTED messages, not over everything ever signed. Two
+  // distinct messages may legitimately be signed under the same nonce; what must
+  // never happen is that both are executed.
+  val noDoubleExecution = executed.forall(m1 =>
+    executed.forall(m2 => (m1.nonce == m2.nonce) implies m1 == m2))
+
+  val witnessNeverExecuted = executed.size() == 0
+}
+
+module ThresholdBridgeTest {
+  import ThresholdBridge(
+    VALIDATORS = Set("v1","v2","v3"),
+    THRESHOLD = 2,
+    // Two DISTINCT messages deliberately sharing nonce 1 -- the replay case.
+    MESSAGES = Set(
+      { nonce: 1, payload: "a", sourceChain: "c1" },
+      { nonce: 1, payload: "b", sourceChain: "c1" },
+      { nonce: 2, payload: "c", sourceChain: "c1" }),
+  ).*
 }
 ```
+
+> **This module previously had no `init` and no `step`, so it could not be run or
+> model-checked at all -- and both of its stated invariants were false.**
+> `executed` tracked bare nonces while `signatures` was keyed by the full
+> message, so two distinct messages sharing a nonce broke
+> `onlyThresholdExecuted`, and `noDoubleExecution` quantified over everything
+> ever signed rather than over what was executed. Verified against 0.32.0:
+> both now hold over 4000 samples, and `witnessNeverExecuted` is violated,
+> proving execution is actually reachable rather than vacuously safe.
 
 ---
 
@@ -374,7 +407,7 @@ module ThresholdBridge {
 Generic cross-chain transfer pattern with escrow on source, fill on destination,
 and settlement or timeout refund.
 
-```quint sketch
+```quint illustrative
 module EscrowFillSettle {
   type Address = str
   type OrderId = int
@@ -412,8 +445,13 @@ module EscrowFillSettle {
     orders' = Map(),
     orderStatus' = Map(),
     orderFiller' = Map(),
-    sourceBalances' = USERS.mapBy(u => 1000),
-    destBalances' = USERS.mapBy(u => 1000),
+    // Seed FILLERS as well as USERS. Seeding only USERS leaves every filler with
+    // a zero destination balance, so `fill`'s balance guard can never hold, the
+    // order lifecycle never leaves `Escrowed`, and every safety invariant below
+    // passes VACUOUSLY while the protocol cannot execute at all. Verified: with
+    // USERS-only seeding, `Filled` and `Settled` are unreachable.
+    sourceBalances' = USERS.union(FILLERS).mapBy(u => 1000),
+    destBalances' = USERS.union(FILLERS).mapBy(u => 1000),
     nextOrderId' = 1,
     currentHeight' = 1,
   }
@@ -540,5 +578,11 @@ module EscrowFillSettle {
   val noNegativeBalances =
     USERS.forall(u => amountOf(sourceBalances, u) >= 0) and
     USERS.forall(u => amountOf(destBalances, u) >= 0)
+
+  // Reachability witnesses. Each MUST be violated during simulation; if either
+  // reports [ok], the lifecycle is stalled and the invariants above are vacuous.
+  //   quint run --invariant=witnessNeverFilled spec.qnt   -> expect a violation
+  val witnessNeverFilled = orderStatus.keys().forall(id => orderStatus.get(id) != Filled)
+  val witnessNeverSettled = orderStatus.keys().forall(id => orderStatus.get(id) != Settled)
 }
 ```

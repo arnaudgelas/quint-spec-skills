@@ -530,7 +530,7 @@ val heightMonotonic = blockHeight >= 0
 
 Model a process with distinct states and transitions. Use sum types for states and ensure terminal states are reachable.
 
-```quint sketch
+```quint illustrative
 type State = Idle | Started | Processing | Finished | Failed
 
 var state: State

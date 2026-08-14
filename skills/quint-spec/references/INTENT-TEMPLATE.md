@@ -13,7 +13,7 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 Models the full lifecycle of a cross-chain intent from creation through
 settlement or expiry.
 
-```quint sketch
+```quint illustrative
 module IntentTypes {
   type Address = str
   type IntentId = int
@@ -317,17 +317,25 @@ module SolverCompetition {
     fillNext(solver)
   }
 
-  // Bounded distribution check: no solver fills more than 2x the average under
-  // nondeterministic free choice. This is NOT a proof of economic fairness or
-  // scheduler guarantees -- it checks bounded distribution when solvers act freely.
-  // (only meaningful when enough intents have been filled)
-  val solverFairness =
+  // TRUE invariants -- these hold in every reachable state.
+  val fillsAccountedFor =
+    SOLVERS.fold(0, (sum, s) => sum + fillCount(s)) == intentsFilled.keys().size()
+
+  val noSolverFillsUnassigned =
+    intentsFilled.keys().forall(id => SOLVERS.contains(intentsFilled.get(id)))
+
+  // NOT an invariant -- a WITNESS, and it is violated in milliseconds.
+  // Under free nondeterministic choice one solver can take every intent, so
+  // "no solver exceeds 2x the average" is false by construction. That violation
+  // is the actual finding: nothing in this protocol prevents solver
+  // monopolisation. Distribution is an economic/scheduling property, and a
+  // model with free choice cannot establish it -- you would need an explicit
+  // fairness assumption or a rotation/auction mechanism in the model itself.
+  // Never present a bounded-distribution check as a fairness guarantee.
+  val witnessBalancedDistribution =
     val totalFills = SOLVERS.fold(0, (sum, s) => sum + fillCount(s))
     if (totalFills < SOLVERS.size() * 2) true
-    else SOLVERS.forall(s =>
-      val avg = totalFills / SOLVERS.size()
-      fillCount(s) <= avg * 2
-    )
+    else SOLVERS.forall(s => fillCount(s) <= (totalFills / SOLVERS.size()) * 2)
 }
 ```
 
@@ -338,7 +346,7 @@ module SolverCompetition {
 All orders in a batch clear at the same price. Ensures no order gets
 a worse price than their limit.
 
-```quint sketch
+```quint illustrative
 module BatchAuction {
   type Address = str
   type OrderId = int
@@ -458,7 +466,7 @@ module BatchAuction {
 Fills are assumed valid during a challenge period. Anyone can challenge
 with proof of invalidity.
 
-```quint sketch
+```quint illustrative
 module OptimisticVerification {
   type Address = str
   type FillId = int
@@ -570,12 +578,28 @@ module OptimisticVerification {
     }
   }
 
-  // Safety: no invalid fill can be verified
-  // (an invalid fill must be challenged before finalization)
-  val noInvalidFinalizations = fillRecords.keys().forall(id =>
+  // TRUE safety invariant: an honest solver is never slashed. `challenge` is
+  // only enabled when the claim really was inflated.
+  val onlyDishonestChallenged = fillRecords.keys().forall(id =>
     val record = fillRecords.get(id)
-    val s = fillStatus.get(id)
-    (s == Verified) implies (record.claimedOutput <= record.actualOutput)
+    (fillStatus.get(id) == Challenged) implies (record.claimedOutput > record.actualOutput)
+  )
+
+  // NOT an invariant of this model -- kept deliberately as a WITNESS.
+  // Optimistic verification is safe only under the assumption that an honest
+  // challenger observes every invalid fill within CHALLENGE_PERIOD. This model
+  // makes no such assumption, so an unchallenged invalid fill finalizes to
+  // Verified and this expression is violated. That violation IS the security
+  // requirement made explicit; do not "fix" it by weakening the model.
+  //
+  //   quint run --invariant=witnessInvalidFinalization spec.qnt   -> violation
+  //
+  // To turn it into a real invariant you must add the challenger-liveness
+  // assumption to the model (e.g. an action that challenges every invalid fill
+  // before the period elapses, plus fairness), and say so in Modeling Limits.
+  val witnessInvalidFinalization = fillRecords.keys().forall(id =>
+    val record = fillRecords.get(id)
+    (fillStatus.get(id) == Verified) implies (record.claimedOutput <= record.actualOutput)
   )
 }
 ```
