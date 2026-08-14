@@ -7,7 +7,9 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 ### Basic Types
 
 ```text
-int           // Arbitrary precision integer
+int           // Integer. Mathematically unbounded, BUT the default quint run/test
+              // backend is Rust/i64: overflow past 2^63-1 raises QNT601, and a
+              // literal outside i64 raises QNT600. Apalache is unbounded.
 bool          // true, false
 str           // String literal: "hello"
 ```
@@ -17,30 +19,41 @@ str           // String literal: "hello"
 ```text
 Set[T]        // Unordered, unique elements: Set(1, 2, 3)
 List[T]       // Ordered sequence: [1, 2, 3]
-Map[K, V]     // Key-value store: Map("a" -> 1, "b" -> 2)
+K -> V        // Map TYPE, e.g. `str -> int`. Value literal: Map("a" -> 1, "b" -> 2)
 (T1, T2)      // Tuple: (1, "hello")
 ```
 
+> The map **type** is written `K -> V`, never `Map[K, V]`. Quint ships a dedicated
+> diagnostic for this mistake: `var m: Map[str, int]` fails with
+> `QNT015: Use 'str -> int' instead of 'Map[str, int]' for map types`.
+> `Map(...)` is only the value constructor.
+
 ### Record Types
 
-```text
+```quint sketch
 // Named fields
 type Pool = { reserve0: int, reserve1: int, k: int }
 
 // Construction
-val p: Pool = { reserve0: 100, reserve1: 200, k: 20000 }
+pure val p: Pool = { reserve0: 100, reserve1: 200, k: 20000 }
 
 // Access
-p.reserve0          // 100
+pure val r0 = p.reserve0                    // 100
 
-// Spread update (creates new record with updated fields)
-{ ...p, reserve0: 150 }
-p.with("reserve0", 150)              // Single-field update (alternative to spread syntax)
+// Spread update (creates a new record with the listed fields replaced)
+pure val bigger = { ...p, reserve0: 150 }
+
+// Single-field update (alternative to spread syntax)
+pure val bigger2 = p.with("reserve0", 150)
 ```
+
+> Every top-level item in a module must be a definition. A bare expression such as
+> `p.reserve0` on its own line is a syntax error (QNT000) -- bind it with `val` /
+> `pure val`, or evaluate it in the REPL.
 
 ### Sum Types (Variants)
 
-```text
+```quint sketch
 type Option[a] = Some(a) | None
 type Result[a, e] = Ok(a) | Err(e)
 
@@ -75,7 +88,7 @@ pure def abs(x: int): int = if (x >= 0) x else -x
 
 Can read state (no primes). Used for derived values and invariants.
 
-```text
+```quint sketch
 val totalBalance =
   ADDRESSES.fold(0, (sum, a) => sum + if (balances.keys().contains(a)) balances.get(a) else 0)
 def balanceOf(addr: Address): int = if (balances.keys().contains(addr)) balances.get(addr) else 0
@@ -138,10 +151,17 @@ action transfer(from: Address, receiver: Address, amount: int): bool = all {
   amount > 0,                               // guard
   // Use put, not setBy: setBy fails if the key is absent.
   // The receiver may have no prior entry in the map.
-  balances' = balances
-    .put(from, balances.get(from) - amount)
-    .put(receiver,
-      (if (balances.keys().contains(receiver)) balances.get(receiver) else 0) + amount),
+  //
+  // CRITICAL: read the receiver's balance from the DEBITED map, not from the
+  // original `balances`. Chaining two `.put`s that both read `balances` is an
+  // aliasing bug: when `from == receiver` the second put overwrites the first
+  // using the PRE-debit value, and the transfer mints `amount` out of nothing
+  // (alice: 100 -> 200 on a self-transfer of 100). Either thread the
+  // intermediate map as below, or guard `from != receiver` -- threading is
+  // safer, because the guard is easy to forget when the code is copied.
+  val debited = balances.put(from, balances.get(from) - amount)
+  balances' = debited.put(receiver,
+    (if (debited.keys().contains(receiver)) debited.get(receiver) else 0) + amount),
 }
 ```
 
@@ -326,14 +346,19 @@ eventually(p)                         // p holds in some future state
 next(p)                               // p holds in the next state
 p.leadsTo(q)                          // Whenever p holds, q eventually holds (v0.32.0)
 enabled(action)                       // action's guards are satisfied in current state
-weakFair(A, e)                        // Weak fairness: WF_e(A)
-strongFair(A, e)                      // Strong fairness: SF_e(A)
-orKeep(A, x)                          // [A]_x: A takes a step, or x is unchanged
-mustChange(A, x)                      // <A>_x: A takes a step AND x changes
-p.guarantees(q)                       // Temporal guarantee combinator
-existsConst(x => p)                   // ∃x: p (unconstrained existential)
-forallConst(x => p)                   // ∀x: p (unconstrained universal)
+weakFair(A, Set(x, y))                // Weak fairness WF_vars(A) -- SET of variables
+strongFair(A, Set(x, y))              // Strong fairness SF_vars(A) -- SET of variables
+orKeep(A, Set(x))                     // [A]_vars: A takes a step, or vars unchanged
+mustChange(A, Set(x))                 // <A>_vars: A takes a step AND vars change
 ```
+
+> The last four take a **set of state variables**, not a bare variable. Their type
+> variable is unconstrained, so `weakFair(step, x)` typechecks silently and means
+> nothing. Always write `Set(...)`.
+>
+> There is **no** `guarantees`, `existsConst`, or `forallConst` in Quint — all three
+> are `QNT404: Name not found`. For quantification, use bounded `S.forall(x => p)`
+> and `S.exists(x => p)` over an explicit set.
 
 ## Run Traces (Tests)
 
@@ -344,12 +369,24 @@ run myTest =
     .expect(property1)
     .then(action2(arg3))
     .expect(property2)
-    .fail()                           // Expect the last action to fail
 ```
+
+> **`.fail()` does not mean "the last step should fail".** `a.fail()` is `true`
+> exactly when `a` evaluates to `false`, and in a chain it applies to the WHOLE
+> action to its left -- so appending `.fail()` to the run above asserts that the
+> entire trace fails, which also passes if `init` or `action1` failed for an
+> unrelated reason. To assert that one specific action is rejected, isolate it:
+>
+> ```quint sketch
+> run rejectsOverdraftTest =
+>   init
+>     .then(deposit("alice", 10))
+>     .then(withdraw("alice", 999).fail())   // only this action must fail
+> ```
 
 ## Common Idioms
 
-```text
+```quint sketch
 // Safe balance lookup (nested map)
 pure def getBalance(bals: Address -> (Denom -> int), addr: Address, denom: Denom): int =
   if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
@@ -372,19 +409,41 @@ val (x, y) = myTuple
 ```text
 tuples(S1, S2, S3)                   // Cartesian product S1 × S2 × S3 → Set[(T1,T2,T3)]
 t._1, t._2, ..., t._50              // Tuple component access (1-indexed)
+// NOTE: `f[e]` bracket syntax is LIST indexing only (it desugars to `nth`).
+// On a map it fails with "Couldn't unify list and fun" -- use `m.get(k)`.
 ```
 
-## Case Expressions
+## Multi-Way Conditionals
 
-Pattern matching with a required default case:
+Quint has **no `case` expression**. `case (...)` is not in the grammar — it fails with
+`QNT000: extraneous input '('` followed by `QNT404: Name 'case' not found`. There are
+exactly two constructs:
 
-```text
-case (
-  | condition1 -> expr1
-  | condition2 -> expr2
-  | _          -> default_expr       // Default branch is mandatory
-)
+```quint sketch
+// 1. Chained if/else for boolean conditions -- the `else` is mandatory
+pure def classify(n: int): str =
+  if (n > 100) "large"
+  else if (n > 10) "medium"
+  else "small"
+
+// 2. `match` for sum types -- one level only
+type Msg = Deposit(int) | Withdraw(int)
+
+pure def amountOf(m: Msg): int =
+  match m {
+    | Deposit(a) => a
+    | Withdraw(a) => a
+  }
 ```
+
+> **`match` does not nest.** A pattern like `Request(Prepare(n))` fails with
+> `QNT008: Reserved keyword 'match' cannot be used as an identifier`. Destructure one
+> level at a time, delegating the inner type to a helper:
+>
+> ```quint sketch
+> pure def inner(i: Inner): int = match i { | Prepare(n) => n | Commit(n) => n }
+> pure def outer(m: Msg): int = match m { | Request(x) => inner(x) | Reply(n) => n }
+> ```
 
 ## Assert (Action Mode)
 

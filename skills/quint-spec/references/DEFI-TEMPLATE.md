@@ -9,19 +9,36 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 
 ## Fixed-Point Arithmetic and Scaling
 
-Quint uses arbitrary-precision integers (`int`) with no floating-point or rational
+Quint's `int` is mathematically unbounded, but the default `quint run`/`quint test`
+backend is Rust/i64 and raises `QNT601` past `2^63-1` with no floating-point or rational
 number support. DeFi protocols that work with fractional values (interest rates,
 prices, fee percentages) must model them as scaled integers -- the same technique
 used in Solidity and most EVM contracts.
 
 **Standard scaling conventions:**
 
-| Precision   | Scale factor | Typical use                           |
-| ----------- | ------------ | ------------------------------------- |
-| 2 decimals  | × 100        | Simple percentages                    |
-| 4 decimals  | × 10,000     | Basis points (30 bps = 0.3% swap fee) |
-| 6 decimals  | × 10^6       | USDC, most stablecoins                |
-| 18 decimals | × 10^18      | ETH/ERC-20 wei, default Solidity math |
+| Precision   | Scale factor | Typical use                           | Safe to simulate?                 |
+| ----------- | ------------ | ------------------------------------- | --------------------------------- |
+| 2 decimals  | × 100        | Simple percentages                    | yes                               |
+| 4 decimals  | × 10,000     | Basis points (30 bps = 0.3% swap fee) | yes                               |
+| 6 decimals  | × 10^6       | USDC, most stablecoins                | only for small balances           |
+| 18 decimals | × 10^18      | ETH/ERC-20 wei, default Solidity math | **no — overflows i64, see below** |
+
+> **Do not scale by 10^18 in a spec you intend to `quint run` or `quint test`.**
+> The default backend is Rust/i64 (max `9223372036854775807`). At 18 decimals, a
+> balance of just **10 tokens** is `10^19` and dies before any invariant is
+> evaluated:
+>
+> ```
+> action init = { bal' = Map("alice" -> 10 * SCALE) }   // SCALE = 10^18
+> → Error [QNT601]: Integer overflow in arithmetic operations: 10 * 1000000000000000000
+> ```
+>
+> Model decimals **abstractly** — use a scale of 100 or 10,000 and a handful of
+> tokens. Precision bugs (truncation, rounding direction, share dilution) reproduce
+> identically at small scale, and the spec stays runnable. If you genuinely need
+> full-width values, use `--backend=typescript` (BigInt) or check with Apalache,
+> and state that choice in the spec's Modeling Limits.
 
 **Modeling rules:**
 
@@ -31,10 +48,13 @@ used in Solidity and most EVM contracts.
 - **Tolerance-based invariants.** Replace `result == expected` with
   `result >= expected - 1 and result <= expected + 1` wherever integer division
   is involved. Use `withinTolerance` from SPELLS.md.
-- **Overflow is invisible in Quint** (`int` is unbounded) but silently wraps at
-  `2^256` in `uint256` implementations. Guard overflow-sensitive expressions
-  explicitly -- e.g., `amount <= MAX_UINT256 - reserve` -- or represent the
-  hardware bound as a `const`.
+- **Overflow does not model itself.** Quint's `int` is mathematically unbounded, so a
+  spec will never reproduce the `2^256` wraparound of a `uint256` implementation --
+  you must guard it explicitly, e.g. `amount <= MAX_UINT256 - reserve`, or carry the
+  hardware bound as a `const`. Note this is the _modelling_ gap; separately, the
+  default Rust/i64 execution backend raises `QNT601` past `2^63-1`, which is a
+  _tooling_ limit and not the semantics you are trying to capture. The two are
+  independent: guard for the first, keep numbers small for the second.
 
 ```quint sketch
 // 0.3% swap fee modeled in basis points (scale = 10,000)
@@ -274,8 +294,14 @@ module Vault {
   pure def amountOf(bals: Address -> int, user: Address): int =
     if (bals.keys().contains(user)) bals.get(user) else 0
 
+  // Both directions must branch on totShares == 0, not just totAssets == 0.
+  // If every share is redeemed while residual assets remain (donated dust, or
+  // truncation leftovers), then totShares == 0 and totAssets > 0. The naive
+  // `assets * totShares / totAssets` then yields 0 for ANY deposit, the
+  // `shares > 0` guard fails forever, and the vault is permanently bricked --
+  // no one can ever deposit again.
   pure def assetsToShares(assets: int, totAssets: int, totShares: int): int =
-    if (totAssets == 0) assets
+    if (totShares == 0 or totAssets == 0) assets   // re-seed 1:1 on an empty vault
     else assets * totShares / totAssets
 
   pure def sharesToAssets(shares: int, totAssets: int, totShares: int): int =
@@ -322,12 +348,17 @@ module Vault {
     }
   }
 
-  // Share accounting: no free tokens from rounding
-  val roundingFavorsVault = USERS.forall(user =>
-    val s = amountOf(userShares, user)
-    val roundTrip = sharesToAssets(assetsToShares(s, totalAssets, totalShares), totalAssets, totalShares)
-    // Original shares -> assets -> shares should not gain value
-    roundTrip <= s or totalShares == 0
+  // Share accounting: no free tokens from rounding.
+  //
+  // Round-trip an ASSET amount: assets -> shares -> assets must never gain.
+  // Feeding a SHARE balance into `assetsToShares` (whose first parameter is an
+  // asset amount) mixes units and tests nothing meaningful -- the two quantities
+  // are only interchangeable at a 1:1 exchange rate, which is precisely the case
+  // where rounding bugs cannot appear.
+  val roundingFavorsVault = 1.to(MAX_DEPOSIT).forall(assets =>
+    val shares = assetsToShares(assets, totalAssets, totalShares)
+    val roundTrip = sharesToAssets(shares, totalAssets, totalShares)
+    roundTrip <= assets
   )
 
   // Solvency: vault always has enough assets to cover shares
@@ -394,13 +425,22 @@ module Lending {
     //   1 * 105 / 20000 = 0
     // Without seizedCollateral > 0, a liquidator clears debt while seizing
     // zero collateral -- a well-known dust-debt exploit in DeFi lending.
-    val seizedCollateral = debt * (100 + LIQUIDATION_BONUS) / (oraclePrice * 100)
+    val idealSeize = debt * (100 + LIQUIDATION_BONUS) / (oraclePrice * 100)
+    // Cap the seizure at the collateral actually available. Writing
+    // `idealSeize <= coll` as a GUARD instead would disable liquidation entirely
+    // once a position goes deeply underwater -- exactly when liquidation matters
+    // most -- and the model would then "prove" solvency only because it forbade
+    // the protocol from ever clearing bad debt.
+    val seizedCollateral = if (idealSeize > coll) coll else idealSeize
     all {
       debt > 0,
       healthFactor(coll, debt, oraclePrice) < COLLATERAL_FACTOR,
       seizedCollateral > 0,   // prevent zero-collateral debt clearance
-      seizedCollateral <= coll,
       collateral' = collateral.put(user, coll - seizedCollateral),
+      // When the seizure was capped, the position was underwater: the shortfall
+      // is realised bad debt. A real protocol must socialise or write this off;
+      // clearing `borrows` to 0 here silently absorbs it. Model that explicitly
+      // if solvency is the property under test.
       borrows' = borrows.put(user, 0),
       oraclePrice' = oraclePrice,
     }

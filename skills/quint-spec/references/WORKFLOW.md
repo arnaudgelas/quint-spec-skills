@@ -25,7 +25,7 @@ source code. Produce a structured summary before writing any Quint.
 ```
 | Element     | Details                                      |
 |-------------|----------------------------------------------|
-| State       | requests: Map[Id, Request], nextId: int       |
+| State       | requests: Id -> Request, nextId: int          |
 | Participants| users, approvers                             |
 | Actions     | create, approve, reject, complete            |
 | Properties  | id_uniqueness, eventually_terminal_state      |
@@ -50,8 +50,12 @@ states, and errors. Use records for structured data.
 - Define `type Result = Ok(State) | Err(Error)` for action outcomes
 - Use type aliases for readability: `type Address = str`, `type Amount = int`
 - Use records for structured data: `type Pool = { reserve0: int, reserve1: int, totalShares: int }`
-- Prefer `int` over bounded integers -- Quint's int is arbitrary precision, model checking explores bounds via constraints
-- Use `Set[T]` for unordered collections, `List[T]` for ordered sequences, `Map[K, V]` for key-value stores
+- Prefer `int` over bounded integers. `int` is mathematically unbounded, but the default
+  `quint run`/`quint test` backend is Rust/i64: arithmetic past `2^63-1` raises `QNT601`.
+  Keep modelled magnitudes small; use `--backend=typescript` (BigInt) or Apalache if you
+  genuinely need full width.
+- Use `Set[T]` for unordered collections, `List[T]` for ordered sequences, and `K -> V` for maps
+  (the map type is `K -> V`; `Map[K, V]` is a parse error, QNT015)
 
 ```quint illustrative
 module MyProtocolTypes {
@@ -185,7 +189,10 @@ what verification actually checks.
 **Types of properties:**
 
 - **State invariants** (`val`): Must hold in every reachable state
-- **Action invariants**: Must hold after every step
+- **Two-state properties**: relate the pre- and post-state. Quint has no "action invariant"
+  construct -- `val p = x' > x` is `QNT000` and `next(x) > x` in a `val` is `QNT200`.
+  Encode them with a ghost variable holding the previous value (see DEFI-TEMPLATE.md
+  `kFloor` / `kNonDecreasing`).
 - **Temporal properties** (`temporal`): Express liveness (something eventually happens)
 
 **Guidelines:**
@@ -193,9 +200,11 @@ what verification actually checks.
 - Start with conservation invariants (totals are preserved)
 - Add safety invariants (bad states are unreachable)
 - Use false-invariant witnesses to verify the model is not vacuously trivial
-- Express tolerance for integer rounding: `abs(computed - expected) <= EPSILON`
+- Express tolerance for integer rounding. `abs` is NOT a Quint builtin (QNT404) --
+  define it, or use `withinTolerance` from SPELLS.md:
+  `pure def abs(x: int): int = if (x < 0) -x else x`
 
-```text
+```quint sketch
 pure def balanceOf(
   bals: Address -> (Denom -> Amount),
   addr: Address,
@@ -245,7 +254,9 @@ documentation and sanity checks before full verification.
 - Use `.then()` chains for sequential actions
 - Use `.expect()` to assert properties after each step
 - Cover happy paths, edge cases, and error paths
-- Name tests descriptively: `run transferThenBurnTest = ...`
+- Name every test with a **`Test` suffix** -- this is mandatory, not stylistic:
+  `quint test` runs only `run` definitions matching `*Test` and skips the rest
+  silently with exit 0: `run transferThenBurnTest = ...`
 
 ```quint sketch
 run happyPathTest =
@@ -257,7 +268,7 @@ run happyPathTest =
     .expect(balanceOf(balances, "bob", "uatom") == 300)
     .expect(balancesConserved)
 
-run edgeCaseZeroTransfer =
+run edgeCaseZeroTransferTest =
   init
     .then(mint("alice", "uatom", 100))
     .then(transfer("alice", "bob", "uatom", 0))
@@ -281,8 +292,12 @@ quint run --invariant=balancesConserved spec.qnt
 # Thorough simulation
 quint run --invariant=balancesConserved --max-samples=10000 --max-steps=50 spec.qnt
 
-# With specific random seed for reproducibility
-quint run --invariant=balancesConserved --seed=42 spec.qnt
+# With a specific random seed for reproducibility.
+# WARNING: supplying --seed silently changes the --max-samples default from
+# 10000 to 1, so this explores ONE trace, not a campaign. A clean result here is
+# almost meaningless as evidence. Always pass --max-samples explicitly when
+# seeding, so the run is both reproducible AND broad:
+quint run --invariant=balancesConserved --seed=42 --max-samples=10000 spec.qnt
 ```
 
 **Formal verification:**
@@ -322,7 +337,7 @@ Implementation Mapping.
 
 **Extract & Map:**
 
-- **State Mapper**: Map Quint types (Maps, Sets, arbitrarily large integers) to
+- **State Mapper**: Map Quint types (Maps, Sets, integers that are unbounded under Apalache but i64 under the default simulator) to
   implementation types (`uint256`, arrays, mappings, structs). Document every
   truncation or coercion (e.g., `int` → `uint256` overflow behavior).
 - **Action Mapper**: Map Quint actions to implementation function calls, resolving
@@ -357,7 +372,8 @@ starter templates.
 - **Balance conservation:** For every token, `sum(all_balances) + protocol_reserves == total_supply`.
   This must hold across deposits, withdrawals, swaps, and fee collection.
 - **Rounding tolerance:** Integer division loses precision. Use tolerance-based
-  invariants: `abs(shares * totalAssets / totalShares - expectedAssets) <= 1`.
+  invariants: `withinTolerance(shares * totalAssets / totalShares, expectedAssets, 1)`
+  (see SPELLS.md; `abs` is not a builtin).
   Reference the Timewave Vault pattern in PATTERNS.md.
 - **Solvency:** `protocol_assets >= protocol_liabilities` at all times.
 - **Share accounting (ERC-4626):** `shares_to_assets(assets_to_shares(x)) <= x`.

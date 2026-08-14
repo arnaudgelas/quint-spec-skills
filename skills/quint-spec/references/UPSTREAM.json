@@ -1,7 +1,7 @@
 {
   "apalache": {
     "jvmDocsLastUpdated": null,
-    "recommendedJdk": "17"
+    "recommendedJdk": "25"
   },
   "quint": {
     "cliCommandDiscrepancies": {

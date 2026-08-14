@@ -116,12 +116,18 @@ module defiSpells {
   /// Constant product: k = x * y
   pure def constantProduct(x: int, y: int): int = x * y
 
-  /// Calculate swap output for constant product AMM (no fees)
+  /// Calculate swap output for constant product AMM (no fees).
+  ///
+  /// Guarding only `reserveIn + amountIn == 0` is NOT enough: with an empty input
+  /// reserve the formula degenerates to `amountIn * reserveOut / amountIn`, i.e.
+  /// the ENTIRE output reserve, for any input. `swapOutput(10, 0, 500) == 500`
+  /// drains the pool for dust. A pool with no input liquidity must not trade.
   pure def swapOutput(amountIn: int, reserveIn: int, reserveOut: int): int =
-    if (reserveIn + amountIn == 0) 0
+    if (amountIn <= 0 or reserveIn <= 0 or reserveOut <= 0) 0
     else (amountIn * reserveOut) / (reserveIn + amountIn)
 
-  /// Calculate swap output with fee (fee is basis points, e.g., 30 = 0.3%)
+  /// Calculate swap output with fee (fee is basis points, e.g., 30 = 0.3%).
+  /// Same zero-reserve guard as `swapOutput`; `feeBps` must be a real fraction.
   pure def swapOutputWithFee(
     amountIn: int,
     reserveIn: int,
@@ -129,7 +135,8 @@ module defiSpells {
     feeBps: int
   ): int =
     val amountInAfterFee = amountIn * (10000 - feeBps)
-    if (reserveIn * 10000 + amountInAfterFee == 0) 0
+    if (amountIn <= 0 or reserveIn <= 0 or reserveOut <= 0) 0
+    else if (feeBps < 0 or feeBps >= 10000) 0
     else (amountInAfterFee * reserveOut) / (reserveIn * 10000 + amountInAfterFee)
 }
 ```
@@ -171,10 +178,17 @@ When building spells for your protocol:
 
 ```quint illustrative
 module myCustomSpells {
-  /// Calculate weighted average of values with weights
+  /// Calculate weighted average of values with weights.
+  ///
+  /// The length guard is load-bearing: the fold walks `values` while indexing
+  /// `weights.nth(acc.i)`, so a `weights` list shorter than `values` reads past
+  /// the end and aborts the whole simulation with
+  /// `QNT510: Out of bounds, nth(...)`. Spells are called from guards, so an
+  /// unguarded panic here takes down every trace, not just one action.
   pure def weightedAverage(values: List[int], weights: List[int]): int =
     val totalWeight = weights.foldl(0, (sum, w) => sum + w)
-    if (totalWeight == 0) 0
+    if (values.length() != weights.length()) 0
+    else if (totalWeight == 0) 0
     else {
       // Fold over values with an index counter to pair each value with its weight
       val weightedSum = values.foldl({ sum: 0, i: 0 }, (acc, v) =>

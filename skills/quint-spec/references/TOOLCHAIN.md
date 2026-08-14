@@ -22,7 +22,9 @@ quint --version
 
 For formal verification (`quint verify`), Apalache is required:
 
-- JDK 17+ is recommended in the Apalache JVM docs
+- Apalache requires **Java 17 or newer** (bytecode compatibility floor) and
+  **recommends Java 25** (Eclipse Temurin or Zulu); Java 17 is less thoroughly
+  tested upstream. `quint verify` will not start on an older JVM.
 - Apalache is automatically invoked by `quint verify`
 
 ## CLI Command Inventory (Synced)
@@ -67,6 +69,10 @@ quint repl --require spec.qnt --backend=rust
 Since v0.29.0, the REPL displays state diffs after each action.
 
 ### quint test
+
+> **Only `run` definitions whose name ends in `Test` are executed.** Everything
+> else is skipped silently and the command still exits 0. Use `--match '.*'` to
+> run every `run` block.
 
 Run named `run` traces.
 
@@ -157,6 +163,9 @@ quint verify --backend=tlc --temporal=eventuallySettled --max-steps=20 spec.qnt
 **When to use TLC vs Apalache:**
 
 - **Apalache** (default): symbolic bounded checking; handles unbounded integers; preferred for most specs.
+  Note the asymmetry with simulation: `quint verify` is unbounded, while the default
+  `quint run` / `quint test` backend is Rust/i64 and raises `QNT601` past `2^63-1`.
+  A spec can therefore pass `verify` and crash under `run`.
 - **TLC**: explicit state enumeration; faster for small finite-state models; use when Apalache times out on tractable finite models.
 
 ## Other Useful Commands
@@ -187,6 +196,6 @@ quint run --invariant=witnessNoActivity spec.qnt
 # 5. Thorough simulation
 quint run --invariant=myInvariant --max-samples=10000 --max-steps=50 spec.qnt
 
-# 6. Formal verification (requires Apalache + JDK 17+)
+# 6. Formal verification (requires Apalache + Java 17 minimum, Java 25 recommended)
 quint verify --invariant=myInvariant --max-steps=10 spec.qnt
 ```

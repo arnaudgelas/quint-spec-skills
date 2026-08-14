@@ -44,38 +44,48 @@ module Workflow {
     nextId' = nextId + 1,
   }
 
-  action approveRequest(approver: str, id: RequestId): bool = all {
-    APPROVERS.contains(approver),
-    requests.keys().contains(id),
+  // NOTE the shape: the `val` is hoisted ABOVE `all {`. A `val` written *inside*
+  // an `all {}` scopes over only the single comma-separated element it sits in,
+  // so `req` would be out of scope by the time `requests'` is assigned (QNT404).
+  // Hoisting is safe even though `id` may be absent: `val` bindings are lazy, so
+  // `requests.get(id)` is not forced when the `requests.keys().contains(id)`
+  // guard is false.
+  action approveRequest(approver: str, id: RequestId): bool =
     val req = requests.get(id)
-    req.status == Pending,
-    requests' = requests.put(id, { ...req, status: Approved, approver: approver }),
-    nextId' = nextId,
-  }
+    all {
+      APPROVERS.contains(approver),
+      requests.keys().contains(id),
+      req.status == Pending,
+      requests' = requests.put(id, { ...req, status: Approved, approver: approver }),
+      nextId' = nextId,
+    }
 
-  action startProgress(id: RequestId): bool = all {
-    requests.keys().contains(id),
+  action startProgress(id: RequestId): bool =
     val req = requests.get(id)
-    req.status == Approved,
-    requests' = requests.put(id, { ...req, status: InProgress }),
-    nextId' = nextId,
-  }
+    all {
+      requests.keys().contains(id),
+      req.status == Approved,
+      requests' = requests.put(id, { ...req, status: InProgress }),
+      nextId' = nextId,
+    }
 
-  action completeRequest(id: RequestId): bool = all {
-    requests.keys().contains(id),
+  action completeRequest(id: RequestId): bool =
     val req = requests.get(id)
-    req.status == InProgress,
-    requests' = requests.put(id, { ...req, status: Completed }),
-    nextId' = nextId,
-  }
+    all {
+      requests.keys().contains(id),
+      req.status == InProgress,
+      requests' = requests.put(id, { ...req, status: Completed }),
+      nextId' = nextId,
+    }
 
-  action cancelRequest(id: RequestId): bool = all {
-    requests.keys().contains(id),
+  action cancelRequest(id: RequestId): bool =
     val req = requests.get(id)
-    req.status != Completed and req.status != Cancelled,
-    requests' = requests.put(id, { ...req, status: Cancelled }),
-    nextId' = nextId,
-  }
+    all {
+      requests.keys().contains(id),
+      req.status != Completed and req.status != Cancelled,
+      requests' = requests.put(id, { ...req, status: Cancelled }),
+      nextId' = nextId,
+    }
 
   action step = {
     nondet user = USERS.oneOf()
@@ -138,30 +148,32 @@ module ResourceAllocation {
     totalAllocated' = Map(),
   }
 
-  action allocate(p: Participant, r: ResourceId, amount: int): bool = all {
-    amount > 0,
-    PARTICIPANTS.contains(p),
-    RESOURCES.contains(r),
+  action allocate(p: Participant, r: ResourceId, amount: int): bool =
     val currentTotal = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
     val capacity = if (TOTAL_CAPACITY.keys().contains(r)) TOTAL_CAPACITY.get(r) else 0
-    currentTotal + amount <= capacity,
     val pAlloc = if (currentAllocations.keys().contains(p)) currentAllocations.get(p) else Map()
     val currentAlloc = if (pAlloc.keys().contains(r)) pAlloc.get(r) else 0
-    currentAllocations' = currentAllocations.put(p, pAlloc.put(r, currentAlloc + amount)),
-    totalAllocated' = totalAllocated.put(r, currentTotal + amount),
-  }
+    all {
+      amount > 0,
+      PARTICIPANTS.contains(p),
+      RESOURCES.contains(r),
+      currentTotal + amount <= capacity,
+      currentAllocations' = currentAllocations.put(p, pAlloc.put(r, currentAlloc + amount)),
+      totalAllocated' = totalAllocated.put(r, currentTotal + amount),
+    }
 
-  action deallocate(p: Participant, r: ResourceId, amount: int): bool = all {
-    amount > 0,
-    PARTICIPANTS.contains(p),
-    RESOURCES.contains(r),
+  action deallocate(p: Participant, r: ResourceId, amount: int): bool =
     val pMap = if (currentAllocations.keys().contains(p)) currentAllocations.get(p) else Map()
     val pAlloc = if (pMap.keys().contains(r)) pMap.get(r) else 0
     val currentTotal = if (totalAllocated.keys().contains(r)) totalAllocated.get(r) else 0
-    pAlloc >= amount,
-    currentAllocations' = currentAllocations.put(p, pMap.put(r, pAlloc - amount)),
-    totalAllocated' = totalAllocated.put(r, currentTotal - amount),
-  }
+    all {
+      amount > 0,
+      PARTICIPANTS.contains(p),
+      RESOURCES.contains(r),
+      pAlloc >= amount,
+      currentAllocations' = currentAllocations.put(p, pMap.put(r, pAlloc - amount)),
+      totalAllocated' = totalAllocated.put(r, currentTotal - amount),
+    }
 
   action step = {
     nondet p = PARTICIPANTS.oneOf()

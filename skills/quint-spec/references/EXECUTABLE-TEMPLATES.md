@@ -1,7 +1,16 @@
 # Executable Template Modules
 
-These modules are syntax-validated in CI and can be copied directly as
-starting points when you need runnable templates.
+These modules are type-checked in CI and each defines both `init` and `step`, so
+they run as-is:
+
+```bash
+quint run --main=ExecutableBankTemplate --invariant=noNegativeSupply <file>.qnt
+```
+
+The `step` actions pick participants and amounts from small fixed sets so the
+templates stay runnable without an instantiating module. Widen those sets, or
+replace them with `const` parameters plus an `instance`, once you adapt a
+template to your protocol.
 
 ## Bank Accounting Core
 
@@ -27,6 +36,10 @@ module ExecutableBankTemplate {
 
   action mint(receiver: Address, denom: Denom, amount: int): bool = all {
     amount > 0,
+    // Bound the mint. `int` is unbounded in the language, but the default Rust
+    // backend is i64 and an unbounded mint loop reaches QNT601 overflow.
+    amount <= 1000,
+    supplyOf(totalSupply, denom) + amount <= 1000000,
     balances' = balances.put((receiver, denom), balanceOf(balances, receiver, denom) + amount),
     totalSupply' = totalSupply.put(denom, supplyOf(totalSupply, denom) + amount),
   }
@@ -41,7 +54,23 @@ module ExecutableBankTemplate {
     totalSupply' = totalSupply,
   }
 
+  action step = {
+    nondet from = Set("alice", "bob").oneOf()
+    nondet receiver = Set("alice", "bob").oneOf()
+    nondet amount = 1.to(10).oneOf()
+    any {
+      mint(receiver, "uatom", amount),
+      send(from, receiver, "uatom", amount),
+    }
+  }
+
   val noNegativeSupply = totalSupply.keys().forall(d => supplyOf(totalSupply, d) >= 0)
+
+  // Conservation: total supply equals the sum of all balances for that denom.
+  val supplyMatchesBalances =
+    totalSupply.keys().forall(d =>
+      supplyOf(totalSupply, d) ==
+        balances.keys().filter(k => k._2 == d).fold(0, (sum, k) => sum + balances.get(k)))
 }
 ```
 
@@ -110,9 +139,31 @@ module ExecutableWorkflowTemplate {
     nextId' = nextId,
   }
 
+  action step = {
+    nondet creator = USERS.oneOf()
+    nondet approver = APPROVERS.oneOf()
+    any {
+      create(creator, "data"),
+      all {
+        requests.keys().size() > 0,
+        nondet id = requests.keys().oneOf()
+        any { approve(id, approver), complete(id) },
+      },
+    }
+  }
+
   val completedWereApproved = requests.keys().forall(id =>
     requests.get(id).status == Completed implies requests.get(id).approver != ""
   )
+}
+
+// A module with `const` parameters cannot run on its own -- `quint run` reports
+// QNT500 "Uninitialized const". Instantiate it, and point --main at the instance.
+module ExecutableWorkflowTemplateTest {
+  import ExecutableWorkflowTemplate(
+    USERS = Set("u1", "u2"),
+    APPROVERS = Set("a1"),
+  ).*
 }
 ```
 
@@ -139,6 +190,10 @@ module ExecutableIntentTemplate {
 
   var intents: IntentId -> Intent
   var status: IntentId -> Status
+  // WHO filled each intent. Settlement must pay this address. Without it,
+  // settleIntent has to take the payee as a parameter, and then ANY caller can
+  // name themselves and walk off with the creator's escrow.
+  var intentSolver: IntentId -> Address
   var balances: (ChainId, Address, str) -> int
   var nextIntentId: IntentId
   var currentHeight: int
@@ -149,6 +204,7 @@ module ExecutableIntentTemplate {
   action init = all {
     intents' = Map(),
     status' = Map(),
+    intentSolver' = Map(),
     balances' = Map(),
     nextIntentId' = 1,
     currentHeight' = 1,
@@ -178,6 +234,7 @@ module ExecutableIntentTemplate {
       deadline: currentHeight + 10,
     }),
     status' = status.put(nextIntentId, Pending),
+    intentSolver' = intentSolver,
     balances' = balances.put((srcChain, creator, inputToken), bal(srcChain, creator, inputToken) - inputAmount),
     nextIntentId' = nextIntentId + 1,
     currentHeight' = currentHeight,
@@ -189,6 +246,11 @@ module ExecutableIntentTemplate {
     currentHeight < intents.get(intentId).deadline,
     outputAmount >= intents.get(intentId).minOutput,
     bal(intents.get(intentId).destChain, solver, intents.get(intentId).outputToken) >= outputAmount,
+    // A solver must not fill its own intent, AND the credit must read the
+    // debited map. Two chained puts that both read `balances` alias when
+    // solver == creator: the second overwrites the first with the pre-debit
+    // value, minting `outputAmount`.
+    solver != intents.get(intentId).creator,
     balances' = balances
       .put(
         (intents.get(intentId).destChain, solver, intents.get(intentId).outputToken),
@@ -204,24 +266,30 @@ module ExecutableIntentTemplate {
           + outputAmount
       ),
     status' = status.put(intentId, Filled),
+    // Bind the payout to the address that actually delivered.
+    intentSolver' = intentSolver.put(intentId, solver),
     intents' = intents,
     nextIntentId' = nextIntentId,
     currentHeight' = currentHeight,
   }
 
-  action settleIntent(intentId: IntentId, solver: Address): bool = all {
+  // NOTE: no `solver` parameter. The payee is read from state, never supplied by
+  // the caller -- otherwise settleIntent(id, attacker) drains the escrow.
+  action settleIntent(intentId: IntentId): bool = all {
     status.keys().contains(intentId),
     status.get(intentId) == Filled,
+    intentSolver.keys().contains(intentId),
     balances' = balances.put(
       (
         intents.get(intentId).sourceChain,
-        solver,
+        intentSolver.get(intentId),
         intents.get(intentId).inputToken,
       ),
-      bal(intents.get(intentId).sourceChain, solver, intents.get(intentId).inputToken)
+      bal(intents.get(intentId).sourceChain, intentSolver.get(intentId), intents.get(intentId).inputToken)
         + intents.get(intentId).inputAmount
     ),
     status' = status.put(intentId, Settled),
+    intentSolver' = intentSolver,
     intents' = intents,
     nextIntentId' = nextIntentId,
     currentHeight' = currentHeight,
@@ -244,6 +312,7 @@ module ExecutableIntentTemplate {
       ) + intents.get(intentId).inputAmount
     ),
     status' = status.put(intentId, Expired),
+    intentSolver' = intentSolver,
     intents' = intents,
     nextIntentId' = nextIntentId,
     currentHeight' = currentHeight,
@@ -253,8 +322,28 @@ module ExecutableIntentTemplate {
     currentHeight' = currentHeight + 1,
     intents' = intents,
     status' = status,
+    intentSolver' = intentSolver,
     balances' = balances,
     nextIntentId' = nextIntentId,
+  }
+
+  action step = {
+    nondet creator = Set("alice", "bob").oneOf()
+    nondet solver = Set("solver1", "solver2").oneOf()
+    nondet amount = 1.to(10).oneOf()
+    any {
+      createIntent(creator, "chainA", "chainB", "tokenIn", "tokenOut", amount, amount),
+      all {
+        status.keys().size() > 0,
+        nondet id = status.keys().oneOf()
+        any {
+          fillIntent(id, solver, amount),
+          settleIntent(id),
+          expireIntent(id),
+        },
+      },
+      advanceHeight,
+    }
   }
 
   val knownStatuses = status.keys().forall(id =>
@@ -284,6 +373,9 @@ module ExecutableEscrowFillSettleTemplate {
 
   var orders: OrderId -> Order
   var orderStatus: OrderId -> OrderStatus
+  // WHO filled each order. settle() must pay this address, never a caller-supplied
+  // one, or any third party can claim the sender's escrow.
+  var orderFiller: OrderId -> Address
   var sourceBalances: (Address, Denom) -> int
   var destBalances: (Address, Denom) -> int
   var nextOrderId: OrderId
@@ -295,6 +387,7 @@ module ExecutableEscrowFillSettleTemplate {
   action init = all {
     orders' = Map(),
     orderStatus' = Map(),
+    orderFiller' = Map(),
     sourceBalances' = Map(),
     destBalances' = Map(),
     nextOrderId' = 1,
@@ -315,6 +408,7 @@ module ExecutableEscrowFillSettleTemplate {
       timeoutHeight: currentHeight + 10,
     }),
     orderStatus' = orderStatus.put(nextOrderId, Escrowed),
+    orderFiller' = orderFiller,
     sourceBalances' = sourceBalances.put((sender, denom), amountOf(sourceBalances, sender, denom) - srcAmount),
     destBalances' = destBalances,
     nextOrderId' = nextOrderId + 1,
@@ -326,6 +420,9 @@ module ExecutableEscrowFillSettleTemplate {
     orderStatus.get(orderId) == Escrowed,
     currentHeight < orders.get(orderId).timeoutHeight,
     amountOf(destBalances, filler, orders.get(orderId).denom) >= orders.get(orderId).destAmount,
+    // Without this, filler == receiver makes the two chained puts alias: the
+    // credit reads the pre-debit balance and the fill mints destAmount.
+    filler != orders.get(orderId).receiver,
     destBalances' = destBalances
       .put(
         (filler, orders.get(orderId).denom),
@@ -337,20 +434,26 @@ module ExecutableEscrowFillSettleTemplate {
           + orders.get(orderId).destAmount
       ),
     orderStatus' = orderStatus.put(orderId, Filled),
+    // Bind the payout to the address that actually delivered.
+    orderFiller' = orderFiller.put(orderId, filler),
     orders' = orders,
     sourceBalances' = sourceBalances,
     nextOrderId' = nextOrderId,
     currentHeight' = currentHeight,
   }
 
-  action settle(orderId: OrderId, filler: Address): bool = all {
+  // NOTE: no `filler` parameter -- the payee comes from state.
+  action settle(orderId: OrderId): bool = all {
     orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Filled,
+    orderFiller.keys().contains(orderId),
     sourceBalances' = sourceBalances.put(
-      (filler, orders.get(orderId).denom),
-      amountOf(sourceBalances, filler, orders.get(orderId).denom) + orders.get(orderId).sourceAmount
+      (orderFiller.get(orderId), orders.get(orderId).denom),
+      amountOf(sourceBalances, orderFiller.get(orderId), orders.get(orderId).denom)
+        + orders.get(orderId).sourceAmount
     ),
     orderStatus' = orderStatus.put(orderId, Settled),
+    orderFiller' = orderFiller,
     orders' = orders,
     destBalances' = destBalances,
     nextOrderId' = nextOrderId,
@@ -367,6 +470,7 @@ module ExecutableEscrowFillSettleTemplate {
         + orders.get(orderId).sourceAmount
     ),
     orderStatus' = orderStatus.put(orderId, Refunded),
+    orderFiller' = orderFiller,
     orders' = orders,
     destBalances' = destBalances,
     nextOrderId' = nextOrderId,
@@ -377,10 +481,31 @@ module ExecutableEscrowFillSettleTemplate {
     currentHeight' = currentHeight + 1,
     orders' = orders,
     orderStatus' = orderStatus,
+    orderFiller' = orderFiller,
     sourceBalances' = sourceBalances,
     destBalances' = destBalances,
     nextOrderId' = nextOrderId,
   }
+
+  action step = {
+    nondet sender = Set("alice", "bob").oneOf()
+    nondet filler = Set("filler1", "filler2").oneOf()
+    nondet amount = 1.to(10).oneOf()
+    any {
+      escrow(sender, sender, "uatom", amount, amount),
+      all {
+        orderStatus.keys().size() > 0,
+        nondet id = orderStatus.keys().oneOf()
+        any { fill(id, filler), settle(id), timeout(id) },
+      },
+      advanceHeight,
+    }
+  }
+
+  // Only the address that actually filled an order may be paid on settlement.
+  val settledOrdersHaveFiller =
+    orderStatus.keys().forall(id =>
+      orderStatus.get(id) == Settled implies orderFiller.keys().contains(id))
 }
 ```
 
@@ -422,7 +547,23 @@ module ExecutableAmmTemplate {
     reserve1' = reserve1 - swapOutput(amountIn, reserve0, reserve1, FEE_NUMERATOR, FEE_DENOMINATOR),
   }
 
+  action step = {
+    nondet amount = 1.to(MAX_AMOUNT).oneOf()
+    any {
+      addLiquidity(amount, amount),
+      swap0For1(amount),
+    }
+  }
+
   val reservesSolvent = reserve0 >= 0 and reserve1 >= 0
+}
+
+module ExecutableAmmTemplateTest {
+  import ExecutableAmmTemplate(
+    MAX_AMOUNT = 100,
+    FEE_NUMERATOR = 3,
+    FEE_DENOMINATOR = 1000,
+  ).*
 }
 ```
 
@@ -449,4 +590,7 @@ module ExecutableSpellsTemplate {
   pure def mapSum(m: str -> int): int =
     m.keys().fold(0, (acc, key) => acc + m.get(key))
 }
+
+// This module is a pure function library: it declares no `var`, so it has no
+// `init`/`step` and is not runnable by design. Import it from a stateful module.
 ```

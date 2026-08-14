@@ -42,7 +42,7 @@ npm install -g @informalsystems/quint@0.32.0
 quint --version
 
 # For formal verification (quint verify), install Apalache:
-# Requires JDK 17+
+# Requires Java 17 minimum; Apalache recommends Java 25 (Temurin/Zulu)
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
 ```
 
@@ -97,6 +97,9 @@ is not vacuously trivial.
 
 `run` traces with `.then()` and `.expect()` chains. Cover happy paths, edge cases,
 and error paths. Use `quint test` for deterministic regression suites.
+**Name every test with a `Test` suffix** -- `quint test` silently skips `run`
+definitions that lack it and still exits 0, so an unsuffixed suite looks like it
+passed when nothing ran. Confirm the reported passing count is non-zero.
 
 ### Phase 7: Verification
 
@@ -158,7 +161,12 @@ Read the relevant reference file **before** writing any Quint for the domain:
 1. **Missing Frame Conditions** -- Assign `variable' = variable` for every unchanged var.
 2. **Vacuously True Invariants** -- Write a false-invariant witness; verify it gets violated.
 3. **Overly Constrained Nondeterminism** -- Reduce `nondet` ranges; verify `step` can fire.
-4. **Integer Overflow Modeling** -- Add explicit bounds in guards; Quint `int` is unbounded.
+4. **Integer Bounds Differ By Backend** -- `int` is mathematically unbounded, but the
+   **default `quint run` / `quint test` backend is Rust, which is i64**. Arithmetic past
+   `2^63-1` fails with `QNT601: Integer overflow`; a literal outside i64 fails with
+   `QNT600`. `--backend=typescript` uses BigInt, and Apalache (`quint verify`) is
+   unbounded — so the same spec can pass `verify` and crash under `run`. Keep modelled
+   quantities small (tens, not `10^18`) and add explicit bounds in guards.
 5. **Confusing `all` vs `any`** -- `all` = conjunction (must all succeed); `any` = nondeterministic OR.
 6. **Forgetting `nondet` in Step** -- Use `nondet x = S.oneOf()` before parameterized actions.
 7. **Unsafe Map Access** -- `Map.get(key)` and `.setBy(key, f)` both fail on missing keys.

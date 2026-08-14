@@ -169,8 +169,10 @@ var ghostTotalWithdrawn: int
 var ghostActionLog: List[str]
 
 action deposit(user: str, amount: int): bool = all {
-  // Real logic
-  balances' = balances.setBy(user, b => b + amount),
+  amount > 0,
+  // Real logic. `put` with an explicit default, not `setBy`: setBy raises QNT507
+  // on a key the map does not already contain, and a first-time depositor has none.
+  balances' = balances.put(user, balanceOf(user) + amount),
   // Ghost updates
   ghostTotalDeposited' = ghostTotalDeposited + amount,
   ghostActionLog' = ghostActionLog.append("deposit"),
@@ -192,7 +194,7 @@ val flowConservation =
 Use spread syntax to update specific fields while keeping others unchanged.
 Especially useful with complex nested state.
 
-```text
+```quint sketch
 type ChainState = {
   balances: str -> int,
   supply: int,
@@ -201,7 +203,10 @@ type ChainState = {
 }
 
 pure def updateBalance(state: ChainState, addr: str, delta: int): ChainState =
-  { ...state, balances: state.balances.setBy(addr, b => b + delta) }
+  // `put` with an explicit default: `setBy` raises QNT507 for any address not
+  // already present in the map.
+  val current = if (state.balances.keys().contains(addr)) state.balances.get(addr) else 0
+  { ...state, balances: state.balances.put(addr, current + delta) }
 
 pure def advanceHeight(state: ChainState): ChainState =
   { ...state, height: state.height + 1 }
@@ -218,8 +223,12 @@ invariant checking. From the Neutron DEX specification.
 
 ```quint sketch
 // Track cumulative fees per liquidity position
+var balances: Address -> int
 var cumulativeFees: PoolId -> int
 var lastClaimedFees: (Address, PoolId) -> int
+
+def balanceOf(user: Address): int =
+  if (balances.keys().contains(user)) balances.get(user) else 0
 
 def feeOf(pool: PoolId): int =
   if (cumulativeFees.keys().contains(pool)) cumulativeFees.get(pool) else 0
@@ -230,13 +239,18 @@ def lastClaimed(user: Address, pool: PoolId): int =
 def pendingFees(user: Address, pool: PoolId): int =
   feeOf(pool) - lastClaimed(user, pool)
 
-action collectFees(user: Address, pool: PoolId): bool = all {
+// The `val` is hoisted above `all {`: inside the block it would scope over only
+// the next comma-separated element, so `fees` would be unbound at `balances'`.
+action collectFees(user: Address, pool: PoolId): bool =
   val fees = pendingFees(user, pool)
-  fees > 0,
-  balances' = balances.setBy(user, b => b + fees),
-  lastClaimedFees' = lastClaimedFees.put((user, pool), cumulativeFees.get(pool)),
-  cumulativeFees' = cumulativeFees,
-}
+  all {
+    fees > 0,
+    // `put` with an explicit default, not `setBy`: setBy fails at runtime on a
+    // key that is not already present (QNT507).
+    balances' = balances.put(user, balanceOf(user) + fees),
+    lastClaimedFees' = lastClaimedFees.put((user, pool), feeOf(pool)),
+    cumulativeFees' = cumulativeFees,
+  }
 ```
 
 **When to use:** DeFi protocols with accumulated rewards, fees, or interest.
@@ -248,7 +262,7 @@ action collectFees(user: Address, pool: PoolId): bool = all {
 Write invariants that SHOULD be violated to prove the model is not vacuously
 trivial. If these pass (no violation found), the model is too constrained.
 
-```text
+```quint sketch
 // These should ALL be violated during simulation:
 
 // Witness: some user can have a non-zero balance
@@ -273,7 +287,7 @@ val witnessOnlySingleAction = ghostActionLog.length() <= 1
 For integer arithmetic with rounding, use tolerance bounds instead of exact equality.
 From the Timewave Vault specification.
 
-```text
+```quint sketch
 pure val ROUNDING_TOLERANCE = 1
 
 // Instead of: shares * totalAssets / totalShares == expectedAssets
@@ -402,10 +416,15 @@ action sendPacket(chain: ChainId, channel: ChannelId, data: PacketData, timeout:
 
 action receivePacket(chain: ChainId, channel: ChannelId): bool = {
   val queue = packetQueue(chain, channel)
+  // All three bindings must sit ABOVE `all {`. Written inside the block, each
+  // would scope over only the single comma-separated element it appears in, so
+  // `packet` would be unbound at `processPacketData` and `expectedSeq` unbound
+  // at `nextSequenceRecv'` (QNT404). Hoisting is safe because `val` is lazy:
+  // `queue.head()` is not forced while the `queue.length() > 0` guard is false.
+  val packet = queue.head()
+  val expectedSeq = nextSeqOrOne(nextSequenceRecv, chain, channel)
   all {
     queue.length() > 0,
-    val packet = queue.head()
-    val expectedSeq = nextSeqOrOne(nextSequenceRecv, chain, channel)
     packet.sequence == expectedSeq,
     processPacketData(chain, packet.data),
     packetQueues' = packetQueues.put((chain, channel), queue.tail()),
@@ -446,6 +465,12 @@ module BankKeeper {
   }
 
   action sendCoins(from: Address, receiver: Address, denom: Denom, amount: int): bool = all {
+    // `amount > 0` is NOT optional. Without it, `getBalance(from) >= amount` is
+    // trivially satisfied by a negative amount and the transfer runs backwards:
+    // a zero-balance sender calling sendCoins(alice, bob, uatom, -50) credits
+    // alice 50 and debits bob 50. A non-negativity invariant does not catch it,
+    // because no balance ever goes negative.
+    amount > 0,
     getBalance(from, denom) >= amount,
     balances' = addBalance(addBalance(balances, from, denom, -amount), receiver, denom, amount),
   }
@@ -517,17 +542,41 @@ action start: bool = all {
   errorLog' = errorLog,
 }
 
+// Every non-terminal state needs an outgoing edge, or the states beyond it are
+// unreachable and the actions guarding on them are dead code. Omitting this
+// Started -> Processing edge silently makes `Finished` unreachable.
+action beginProcessing: bool = all {
+  state == Started,
+  state' = Processing,
+  errorLog' = errorLog,
+}
+
 action finish: bool = all {
   state == Processing,
   state' = Finished,
   errorLog' = errorLog,
 }
 
-action fail(err: str): bool = all {
+// NOT `fail`: `fail` is a built-in action combinator in Quint, and redefining it
+// is a hard parse error (QNT101). The same applies to `to`, `head`, `and`, `or`.
+action markFailed(err: str): bool = all {
   state != Finished and state != Failed,
   state' = Failed,
   errorLog' = errorLog.append(err),
 }
+
+action step = any {
+  start,
+  beginProcessing,
+  finish,
+  markFailed("error"),
+}
+
+// Reachability witnesses -- each must be violated during simulation, proving the
+// corresponding state is actually reachable. Without these, a missing transition
+// like the one above goes unnoticed.
+val witnessProcessing = state != Processing
+val witnessFinished = state != Finished
 ```
 
 **When to use:** Business logic, fulfillment pipelines, governance proposals, any multi-step process.
@@ -547,6 +596,11 @@ def allocatedOf(user: str): int = if (allocated.keys().contains(user)) allocated
 val totalAllocated = USERS.fold(0, (sum, u) => sum + allocatedOf(u))
 
 action allocate(user: str, amount: int): bool = all {
+  // `amount > 0` is what makes `capacityRespected` mean anything. Without it a
+  // negative allocation trivially satisfies the capacity guard while increasing
+  // the caller's headroom -- the invariant still holds, so the model reports
+  // success while permitting the very thing it claims to forbid.
+  amount > 0,
   totalAllocated + amount <= CAPACITY,
   allocated' = allocated.put(user, allocatedOf(user) + amount),
 }

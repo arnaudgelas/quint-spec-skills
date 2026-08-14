@@ -111,7 +111,7 @@ module CounterTests {
     value' = value + 1,
   }
 
-  run smoke =
+  run smokeTest =
     init
       .then(inc)
       .expect(value == 1)

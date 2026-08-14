@@ -108,61 +108,85 @@ module IntentLifecycle {
   }
 
   // Solver fills the intent on the destination chain
-  action fillIntent(solver: Address, intentId: IntentId, outputAmount: int): bool = all {
-    status.keys().contains(intentId),
-    status.get(intentId) == Pending,
+  // Every `val` below is hoisted ABOVE its `all {`. Written inside the block a
+  // binding scopes over only the single comma-separated element it appears in,
+  // so it would be unbound in every later element (QNT404). Hoisting is safe
+  // even when the key may be absent, because `val` bindings are lazy: the
+  // `status.keys().contains(intentId)` guard short-circuits first.
+  action fillIntent(solver: Address, intentId: IntentId, outputAmount: int): bool =
     val intent = intents.get(intentId)
-    currentHeight < intent.deadline,
-    // Solver must provide at least minOutputAmount
-    outputAmount >= intent.minOutputAmount,
-    // Solver has sufficient balance on dest chain
-    getBalance(intent.destChain, solver, intent.outputToken) >= outputAmount,
-    // Transfer output to intent creator on dest chain
-    balances' = balances
-      .setBy((intent.destChain, solver, intent.outputToken), b => b - outputAmount)
-      .setBy((intent.destChain, intent.creator, intent.outputToken), b => b + outputAmount),
-    status' = status.put(intentId, Filled),
-    fills' = fills.put(intentId, {
-      intentId: intentId, solver: solver,
-      outputAmount: outputAmount, fillHeight: currentHeight,
-    }),
-    intents' = intents,
-    nextIntentId' = nextIntentId,
-    currentHeight' = currentHeight,
-  }
+    val debitedSolver = balances.put(
+      (intent.destChain, solver, intent.outputToken),
+      getBalance(intent.destChain, solver, intent.outputToken) - outputAmount)
+    all {
+      status.keys().contains(intentId),
+      status.get(intentId) == Pending,
+      solver != intent.creator,
+      currentHeight < intent.deadline,
+      // Solver must provide at least minOutputAmount
+      outputAmount >= intent.minOutputAmount,
+      // Solver has sufficient balance on dest chain
+      getBalance(intent.destChain, solver, intent.outputToken) >= outputAmount,
+      // Transfer output to intent creator on dest chain.
+      // `put` with an explicit current value, not `setBy`: setBy fails at
+      // runtime when the key is not already present (QNT507).
+      // Both puts must read the DEBITED map, not `balances`. If a solver fills
+      // its own intent (solver == intent.creator) the two puts hit the same key
+      // and the second, reading the pre-debit value, would mint `outputAmount`.
+      // The `solver != intent.creator` guard above is the belt; this is the braces.
+      balances' = debitedSolver.put(
+        (intent.destChain, intent.creator, intent.outputToken),
+        (if (debitedSolver.keys().contains((intent.destChain, intent.creator, intent.outputToken)))
+           debitedSolver.get((intent.destChain, intent.creator, intent.outputToken)) else 0)
+          + outputAmount),
+      status' = status.put(intentId, Filled),
+      // Record WHO filled it. Settlement must pay this solver, never an address
+      // supplied by the caller -- otherwise anyone can claim the escrow.
+      fills' = fills.put(intentId, {
+        intentId: intentId, solver: solver,
+        outputAmount: outputAmount, fillHeight: currentHeight,
+      }),
+      intents' = intents,
+      nextIntentId' = nextIntentId,
+      currentHeight' = currentHeight,
+    }
 
-  // Settlement: release escrowed input tokens to solver
-  action settleIntent(intentId: IntentId): bool = all {
-    status.keys().contains(intentId),
-    status.get(intentId) == Filled,
+  // Settlement: release escrowed input tokens to the RECORDED solver
+  action settleIntent(intentId: IntentId): bool =
     val intent = intents.get(intentId)
     val fill = fills.get(intentId)
-    // Release locked input tokens to solver on source chain
-    balances' = balances.setBy(
-      (intent.sourceChain, fill.solver, intent.inputToken), b => b + intent.inputAmount),
-    status' = status.put(intentId, Settled),
-    intents' = intents,
-    fills' = fills,
-    nextIntentId' = nextIntentId,
-    currentHeight' = currentHeight,
-  }
+    all {
+      status.keys().contains(intentId),
+      status.get(intentId) == Filled,
+      fills.keys().contains(intentId),
+      // Release locked input tokens to the solver recorded at fill time
+      balances' = balances.put(
+        (intent.sourceChain, fill.solver, intent.inputToken),
+        getBalance(intent.sourceChain, fill.solver, intent.inputToken) + intent.inputAmount),
+      status' = status.put(intentId, Settled),
+      intents' = intents,
+      fills' = fills,
+      nextIntentId' = nextIntentId,
+      currentHeight' = currentHeight,
+    }
 
   // Expiry: return locked tokens to creator
-  action expireIntent(intentId: IntentId): bool = all {
-    status.keys().contains(intentId),
-    status.get(intentId) == Pending,
+  action expireIntent(intentId: IntentId): bool =
     val intent = intents.get(intentId)
-    currentHeight >= intent.deadline,
-    // Return locked tokens
-    balances' = balances.setBy(
-      (intent.sourceChain, intent.creator, intent.inputToken),
-      b => b + intent.inputAmount),
-    status' = status.put(intentId, Expired),
-    intents' = intents,
-    fills' = fills,
-    nextIntentId' = nextIntentId,
-    currentHeight' = currentHeight,
-  }
+    all {
+      status.keys().contains(intentId),
+      status.get(intentId) == Pending,
+      currentHeight >= intent.deadline,
+      // Return locked tokens
+      balances' = balances.put(
+        (intent.sourceChain, intent.creator, intent.inputToken),
+        getBalance(intent.sourceChain, intent.creator, intent.inputToken) + intent.inputAmount),
+      status' = status.put(intentId, Expired),
+      intents' = intents,
+      fills' = fills,
+      nextIntentId' = nextIntentId,
+      currentHeight' = currentHeight,
+    }
 
   action advanceHeight: bool = all {
     currentHeight' = currentHeight + 1,
@@ -353,7 +377,7 @@ module BatchAuction {
     clearingPrice == 0,  // Still accepting orders
     amount > 0,
     limit > 0,
-    val order: Order = { id: nextOrderId, trader: trader, side: side
+    val order: Order = { id: nextOrderId, trader: trader, side: side,
                          amount: amount, limitPrice: limit }
     orders' = orders.union(Set(order)),
     nextOrderId' = nextOrderId + 1,
@@ -488,17 +512,18 @@ module OptimisticVerification {
   }
 
   // Challenger challenges an invalid fill
-  action challenge(challenger: Address, fillId: FillId): bool = all {
+  action challenge(challenger: Address, fillId: FillId): bool =
+    val record = fillRecords.get(fillId)
+    all {
     fillStatus.keys().contains(fillId),
     fillStatus.get(fillId) == Optimistic,
-    val record = fillRecords.get(fillId)
     // Within challenge period
     currentHeight < record.submitHeight + CHALLENGE_PERIOD,
     // Fill is actually invalid (challenger knows the truth)
     record.claimedOutput > record.actualOutput,
     fillStatus' = fillStatus.put(fillId, Challenged),
     // Slash solver's bond, reward challenger (simplified)
-    solverBonds' = solverBonds.setBy(record.solver, b => b - 10),
+    solverBonds' = solverBonds.put(record.solver, bondOf(record.solver) - 10),
     fillRecords' = fillRecords,
     nextFillId' = nextFillId,
     currentHeight' = currentHeight,

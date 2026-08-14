@@ -48,7 +48,7 @@ Use the canonical CLI manual for command/flag behavior: https://quint.sh/docs/qu
 # (tracked in skills/quint-spec/references/UPSTREAM.json):
 npm install -g @informalsystems/quint@0.32.0
 
-# For formal verification: JDK 17+ (Required for Apalache)
+# For formal verification: Java 17 minimum, Java 25 recommended (Apalache)
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
 ```
 

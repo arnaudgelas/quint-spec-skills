@@ -16,8 +16,14 @@ module ICS20Types {
   type ChainId = str
   type ChannelId = str
   type Address = str
-  type Denom = str
   type Amount = int
+
+  // An IBC denomination is a channel path plus a base token. On the wire this is
+  // rendered as "transfer/channel-0/uatom", but Quint has NO string
+  // concatenation (`a + b` on strings is a type error) and no interpolation, so
+  // the trace must be modelled as structured data. Records compare and hash by
+  // value, so this works as a map key exactly like a string would.
+  type Denom = { path: List[ChannelId], base: str }
 
   type PacketData = {
     sender: Address,
@@ -30,6 +36,13 @@ module ICS20Types {
     sequence: int,
     srcChannel: ChannelId,
     dstChannel: ChannelId,
+    // The chains this packet travels between. Without them, any action that
+    // takes a chain as a free parameter can be pointed at ANY chain: a refund
+    // can drain escrow on a chain that never sent the packet, and a receive can
+    // mint vouchers on a chain that was never the destination. Every action
+    // below pins its chain argument to one of these fields.
+    srcChain: ChainId,
+    dstChain: ChainId,
     data: PacketData,
     timeoutHeight: int,
   }
@@ -98,16 +111,20 @@ module ICS20 {
   }
 
   // Send: escrow tokens on source chain, create packet
-  action sendTransfer(chain: ChainId, channel: ChannelId, sender: Address,
-                      receiver: Address, denom: Denom, amount: Amount): bool = all {
-    amount > 0,
+  // All bindings are hoisted ABOVE `all {`. A `val` written inside the block
+  // scopes over only the single comma-separated element it appears in, so
+  // `state`, `seq`, `packet` and `newState` would each be unbound in every
+  // later element (QNT404).
+  action sendTransfer(chain: ChainId, dstChain: ChainId, channel: ChannelId, sender: Address,
+                      receiver: Address, denom: Denom, amount: Amount): bool =
     val state = chains.get(chain)
-    getBalance(state, sender, denom) >= amount,
     val seq = getSeqOrOne(state.nextSeqSend, channel)
     val packet: Packet = {
       sequence: seq,
       srcChannel: channel,
       dstChannel: channel,  // Simplified: same channel ID
+      srcChain: chain,      // Bind the packet to its origin; timeout must check this
+      dstChain: dstChain,   // Bind the destination; recvPacket must check this
       data: { sender: sender, receiver: receiver, denom: denom, amount: amount },
       timeoutHeight: state.height + 10,
     }
@@ -117,50 +134,73 @@ module ICS20 {
       escrow: state.escrow.put((channel, denom), getEscrow(state, channel, denom) + amount),
       nextSeqSend: state.nextSeqSend.put(channel, seq + 1),
     }
-    chains' = chains.put(chain, newState),
-    inflight' = inflight.union(Set(packet)),
-    acks' = acks,
-  }
+    all {
+      amount > 0,
+      getBalance(state, sender, denom) >= amount,
+      chains' = chains.put(chain, newState),
+      inflight' = inflight.union(Set(packet)),
+      acks' = acks,
+    }
 
   // Receive: mint tokens on destination chain, produce ack
-  action recvPacket(chain: ChainId, packet: Packet): bool = all {
-    inflight.contains(packet),
+  action recvPacket(chain: ChainId, packet: Packet): bool =
     val state = chains.get(chain)
     val expectedSeq = getSeqOrOne(state.nextSeqRecv, packet.dstChannel)
-    packet.sequence == expectedSeq,
-    state.height < packet.timeoutHeight,
-    // Mint voucher tokens on destination
     val d = packet.data
-    val voucherDenom = packet.srcChannel + "/" + d.denom  // IBC denomination
+    // Each hop prepends its channel to the denom trace. Structured data, not
+    // string concatenation -- `packet.srcChannel + "/" + d.denom` is a type error.
+    val voucherDenom: Denom = {
+      path: d.denom.path.append(packet.srcChannel),
+      base: d.denom.base,
+    }
     val newState = {
       ...state,
       balances: addBalance(state.balances, d.receiver, voucherDenom, d.amount),
       nextSeqRecv: state.nextSeqRecv.put(packet.dstChannel, expectedSeq + 1),
     }
-    chains' = chains.put(chain, newState),
-    inflight' = inflight.exclude(Set(packet)),
-    acks' = acks.union(Set((packet, AckSuccess))),
-  }
+    all {
+      inflight.contains(packet),
+      // Pin the receiving chain to the packet's recorded destination. Without
+      // this, `chain` is free and a caller can mint vouchers on any chain.
+      chain == packet.dstChain,
+      packet.sequence == expectedSeq,
+      state.height < packet.timeoutHeight,
+      chains' = chains.put(chain, newState),
+      inflight' = inflight.exclude(Set(packet)),
+      acks' = acks.union(Set((packet, AckSuccess))),
+    }
 
   // Timeout: return escrowed tokens to sender.
   // Per ICS-04, timeout is triggered when the DESTINATION chain height has passed
   // packet.timeoutHeight. The source chain processes the refund once that is proved.
-  action timeoutPacket(srcChain: ChainId, dstChain: ChainId, packet: Packet): bool = all {
-    inflight.contains(packet),
+  action timeoutPacket(srcChain: ChainId, dstChain: ChainId, packet: Packet): bool =
     val srcState = chains.get(srcChain)
     val dstState = chains.get(dstChain)
-    dstState.height >= packet.timeoutHeight,
-    // Return escrowed tokens to original sender on the source chain
     val d = packet.data
     val newSrcState = {
       ...srcState,
       balances: addBalance(srcState.balances, d.sender, d.denom, d.amount),
-      escrow: srcState.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
+      // `put` with an explicit current value, not `setBy`: setBy fails at
+      // runtime when the (channel, denom) key was never escrowed (QNT507).
+      escrow: srcState.escrow.put(
+        (packet.srcChannel, d.denom),
+        getEscrow(srcState, packet.srcChannel, d.denom) - d.amount),
     }
-    chains' = chains.put(srcChain, newSrcState),
-    inflight' = inflight.exclude(Set(packet)),
-    acks' = acks,
-  }
+    all {
+      inflight.contains(packet),
+      // WITHOUT this guard `srcChain` is a free parameter: a caller can name any
+      // chain and have the refund credited -- and the escrow decremented -- on a
+      // chain that never sent the packet. Always tie a refund to the packet's
+      // recorded origin, never to an argument.
+      srcChain == packet.srcChain,
+      dstChain != srcChain,
+      // Refund must not manufacture escrow that was never posted.
+      getEscrow(srcState, packet.srcChannel, d.denom) >= d.amount,
+      dstState.height >= packet.timeoutHeight,
+      chains' = chains.put(srcChain, newSrcState),
+      inflight' = inflight.exclude(Set(packet)),
+      acks' = acks,
+    }
 
   // Process acknowledgement: on success escrow remains (backing destination vouchers);
   // on error refund escrowed tokens to the original sender on the source chain.
@@ -172,51 +212,66 @@ module ICS20 {
           acks' = acks.exclude(Set((packet, AckSuccess))),
           inflight' = inflight,
         }
-      | AckError(_) => all {
-          acks.contains((packet, ack)),
+      | AckError(_) =>
           val state = chains.get(srcChain)
           val d = packet.data
           val newState = {
             ...state,
             balances: addBalance(state.balances, d.sender, d.denom, d.amount),
-            escrow: state.escrow.setBy((packet.srcChannel, d.denom), e => e - d.amount),
+            // `put` with an explicit current value, not `setBy`: setBy fails at
+            // runtime on a (channel, denom) pair that was never escrowed.
+            escrow: state.escrow.put(
+              (packet.srcChannel, d.denom),
+              getEscrow(state, packet.srcChannel, d.denom) - d.amount),
           }
-          chains' = chains.put(srcChain, newState),
-          acks' = acks.exclude(Set((packet, ack))),
-          inflight' = inflight,
-        }
+          all {
+            acks.contains((packet, ack)),
+            // Same free-parameter hole as timeoutPacket: pin the refund to the
+            // packet's recorded origin, never to a caller-supplied chain.
+            srcChain == packet.srcChain,
+            // A refund must not manufacture escrow that was never posted.
+            getEscrow(state, packet.srcChannel, d.denom) >= d.amount,
+            chains' = chains.put(srcChain, newState),
+            acks' = acks.exclude(Set((packet, ack))),
+            inflight' = inflight,
+          }
     }
 
   // Advance block height
-  action advanceHeight(chain: ChainId): bool = all {
+  action advanceHeight(chain: ChainId): bool =
     val state = chains.get(chain)
-    state.height < MAX_HEIGHT,
-    chains' = chains.put(chain, { ...state, height: state.height + 1 }),
-    inflight' = inflight,
-    acks' = acks,
-  }
+    all {
+      state.height < MAX_HEIGHT,
+      chains' = chains.put(chain, { ...state, height: state.height + 1 }),
+      inflight' = inflight,
+      acks' = acks,
+    }
 
   action step = {
     nondet chain = CHAINS.oneOf()
+    nondet toChain = CHAINS.oneOf()
     nondet channel = CHANNELS.oneOf()
     nondet sender = USERS.oneOf()
     nondet receiver = USERS.oneOf()
     nondet denom = DENOMS.oneOf()
     nondet amount = 1.to(MAX_AMOUNT).oneOf()
     any {
-      sendTransfer(chain, channel, sender, receiver, denom, amount),
-      // Nondeterministically pick a packet to receive or timeout
+      sendTransfer(chain, toChain, channel, sender, receiver, denom, amount),
+      // Route each packet using the chains recorded IN the packet, not the
+      // free `chain` binding. Passing an unrelated chain here is exactly the
+      // hole the guards inside recvPacket/timeoutPacket/processAck close --
+      // driving them correctly from `step` keeps those guards from silently
+      // disabling every transition instead of catching a real bug.
       if (inflight.size() > 0) {
         nondet packet = inflight.oneOf()
-        nondet dstChain = CHAINS.oneOf()
         any {
-          recvPacket(chain, packet),
-          timeoutPacket(chain, dstChain, packet),
+          recvPacket(packet.dstChain, packet),
+          timeoutPacket(packet.srcChain, packet.dstChain, packet),
         }
       } else all { chains' = chains, inflight' = inflight, acks' = acks },
       if (acks.size() > 0) {
         nondet ackPair = acks.oneOf()
-        processAck(chain, ackPair._1, ackPair._2)
+        processAck(ackPair._1.srcChain, ackPair._1, ackPair._2)
       } else all { chains' = chains, inflight' = inflight, acks' = acks },
       advanceHeight(chain),
     }
@@ -383,10 +438,11 @@ module EscrowFillSettle {
   }
 
   // Step 2: Filler delivers tokens on destination chain
-  action fill(filler: Address, orderId: OrderId): bool = all {
+  action fill(filler: Address, orderId: OrderId): bool =
+    val order = orders.get(orderId)
+    all {
     orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Escrowed,
-    val order = orders.get(orderId)
     currentHeight < order.timeoutHeight,
     amountOf(destBalances, filler) >= order.destAmount,
     destBalances' = addAmount(
@@ -404,14 +460,17 @@ module EscrowFillSettle {
   }
 
   // Step 3: Settlement releases escrowed tokens to the filler on source chain
-  action settle(orderId: OrderId): bool = all {
+  action settle(orderId: OrderId): bool =
+    val order = orders.get(orderId)
+    // The filler is read from state, never taken as a parameter. A `settle` that
+    // accepts the payee as an argument lets any caller redirect the escrow.
+    val filler = orderFiller.get(orderId)
+    all {
     orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Filled,
     orderFiller.keys().contains(orderId),
-    val order = orders.get(orderId)
-    val filler = orderFiller.get(orderId)
     // Release the escrowed sourceAmount to the filler
-    sourceBalances' = sourceBalances.setBy(filler, b => b + order.sourceAmount),
+    sourceBalances' = sourceBalances.put(filler, amountOf(sourceBalances, filler) + order.sourceAmount),
     orderStatus' = orderStatus.put(orderId, Settled),
     orders' = orders,
     orderFiller' = orderFiller,
@@ -421,13 +480,14 @@ module EscrowFillSettle {
   }
 
   // Timeout: refund escrowed tokens to sender
-  action timeout(orderId: OrderId): bool = all {
+  action timeout(orderId: OrderId): bool =
+    val order = orders.get(orderId)
+    all {
     orderStatus.keys().contains(orderId),
     orderStatus.get(orderId) == Escrowed,
-    val order = orders.get(orderId)
     currentHeight >= order.timeoutHeight,
-    sourceBalances' = sourceBalances.setBy(order.sender, b =>
-      b + order.sourceAmount),
+    sourceBalances' = sourceBalances.put(order.sender,
+      amountOf(sourceBalances, order.sender) + order.sourceAmount),
     orderStatus' = orderStatus.put(orderId, Refunded),
     orders' = orders,
     orderFiller' = orderFiller,

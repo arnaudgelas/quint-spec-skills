@@ -15,7 +15,17 @@ Refinement is the process of proving that a detailed **Concrete Model** (with im
 1. **Abstract Module**: Define the high-level business logic (e.g., a simple `Transfer` action).
 2. **Concrete Module**: Define the low-level logic (e.g., a `Transfer` that includes a `Pending` state and a `Relayer`).
 3. **Refinement Mapping**: Define a mapping from concrete state variables to abstract state variables.
-4. **Proof**: Use Quint to prove that every step in the Concrete model corresponds to a valid step (or a stutter/no-op) in the Abstract model.
+4. **Check**: Establish that the mapped concrete state satisfies the abstract
+   safety property, and that each concrete step moves the mapped state the way an
+   abstract step (or a stutter) would.
+
+> **What the example below does and does not establish.** A _refinement invariant_
+> (`refinementSafety`) shows the mapped state is always abstractly valid. That is
+> strictly weaker than _step refinement_, which additionally requires every concrete
+> step to correspond to an abstract step or a stutter. Step correspondence needs the
+> mapped value **before and after** the transition, so it requires a ghost variable —
+> shown as `stepRefines` below. Do not describe a passing `refinementSafety` as a
+> refinement proof.
 
 ```quint sketch
 // Abstract Model: simple atomic balance transfer
@@ -23,41 +33,70 @@ module AbstractBank {
   const USERS: Set[str]
   var balances: str -> int
 
-  pure def getBalance(addr: str): int =
+  // `def`, not `pure def`: it reads the state variable `balances`.
+  // `pure def` that touches a var is a hard error (QNT200).
+  def getBalance(addr: str): int =
     if (balances.keys().contains(addr)) balances.get(addr) else 0
 
   val balancesNonNegative = USERS.forall(u => getBalance(u) >= 0)
 
-  action transfer(from: str, to: str, amount: int): bool = all {
+  // NOT `to`: `to` is the built-in range operator (`1.to(5)`), and using it as a
+  // parameter name is a hard parse error (QNT101).
+  action transfer(src: str, dst: str, amount: int): bool = all {
     amount > 0,
-    getBalance(from) >= amount,
+    getBalance(src) >= amount,
+    // `put`, not `setBy`: setBy fails at runtime on a key that is absent (QNT507).
     balances' = balances
-      .setBy(from, b => b - amount)
-      .setBy(to, b => b + amount),
+      .put(src, getBalance(src) - amount)
+      .put(dst, getBalance(dst) + amount),
   }
 }
 
-// Concrete Model: two-phase transfer — escrow then release
+// Concrete Model: two-phase transfer -- escrow then release
 module ConcreteBank {
   const USERS: Set[str]
   type Transfer = { from: str, to: str, amount: int }
 
-  var vault: str -> int        // Confirmed balances
-  var pending: Set[Transfer]   // In-flight transfers (funds already deducted from vault)
+  var vault: str -> int        // Confirmed balances (escrow already deducted)
+  var pending: Set[Transfer]   // In-flight transfers (funds already left the vault)
+  var prevAbstract: str -> int // Ghost: mapped state as of the previous step
 
-  pure def vaultOf(addr: str): int =
+  def vaultOf(addr: str): int =
     if (vault.keys().contains(addr)) vault.get(addr) else 0
 
-  // Refinement mapping: abstract balance = vault minus outgoing in-flight escrow
-  pure def abstractBalance(addr: str): int =
+  // Refinement mapping. Abstractly the transfer is atomic: it has either happened
+  // or it has not. While a transfer is in flight it has NOT happened, so the funds
+  // must still be attributed to the SENDER -- and `vault` has already deducted
+  // them, so they are ADDED BACK here.
+  //
+  // Writing `vaultOf(addr) - escrowed` (the intuitive-looking form) deducts the
+  // same amount twice: total mapped supply silently drops by the in-flight amount,
+  // and any conservation invariant over the mapped state becomes unsatisfiable.
+  def abstractBalance(addr: str): int =
     val outgoing = pending.filter(t => t.from == addr)
     val escrowed = outgoing.fold(0, (sum, t) => sum + t.amount)
-    vaultOf(addr) - escrowed
+    vaultOf(addr) + escrowed
 
-  // Refinement invariant: the mapped concrete state satisfies the abstract safety property
-  val refinementCorrect = USERS.forall(u => abstractBalance(u) >= 0)
+  def abstractState: str -> int = USERS.mapBy(u => abstractBalance(u))
+
+  // (a) Refinement invariant: mapped state satisfies the abstract safety property.
+  val refinementSafety = USERS.forall(u => abstractBalance(u) >= 0)
+
+  // (b) Step correspondence: each concrete step either leaves the mapped state
+  // unchanged (a stutter) or changes it while conserving total supply, as an
+  // abstract `transfer` would. With the mapping above it is ESCROWING that
+  // stutters -- the funds stay attributed to the sender -- and RELEASING that
+  // performs the abstract transfer.
+  val stepRefines =
+    val before = USERS.fold(0, (s, u) => s + prevAbstract.get(u))
+    val after = USERS.fold(0, (s, u) => s + abstractBalance(u))
+    prevAbstract == abstractState or before == after
 }
 ```
+
+Check both with `quint verify --invariant=refinementSafety,stepRefines`. `stepRefines`
+is only meaningful once `prevAbstract' = abstractState` is threaded through every
+action in the concrete `step`.
 
 ---
 
@@ -69,11 +108,30 @@ While **Safety** proves "nothing bad happens," **Liveness** proves "something go
 
 To prove liveness, you often need to assume **Fairness**: that if an action is enabled, it will eventually be taken.
 
-- **Weak Fairness** (`weakFair(A, e)`): If action `A` is _continuously_ enabled (on variable expression `e`), it must eventually occur.
-- **Strong Fairness** (`strongFair(A, e)`): If action `A` is _infinitely often_ enabled, it must eventually occur.
+- **Weak Fairness** (`weakFair(A, vars)`): If action `A` is _continuously_ enabled, it must eventually occur.
+- **Strong Fairness** (`strongFair(A, vars)`): If action `A` is _infinitely often_ enabled, it must eventually occur.
+
+> **The second argument must be a SET of state variables, not a bare variable.**
+> Both operators are defined in terms of `mustChange(a, v)`, which calls `v.map(...)`,
+> so `v` has to be a set. The declared signature is `(bool, a) => bool` with an
+> unconstrained type variable, which means **`weakFair(step, x)` typechecks with no
+> error and no warning** while being meaningless. This is a silent failure: nothing
+> in the toolchain will tell you the fairness assumption is malformed.
 
 ```quint sketch
-temporal fairStep = weakFair(step, x)
+// CORRECT -- a set of every variable the action may change
+temporal fairStep = weakFair(step, Set(balances, totalSupply))
+
+// WRONG -- typechecks silently, means nothing:
+//   temporal fairStep = weakFair(step, balances)
+```
+
+A fairness constraint is only useful as an antecedent. State it as
+`fairness.implies(property)`, never as a standalone `temporal`:
+
+```quint sketch
+temporal fairness = weakFair(step, Set(balances, totalSupply))
+temporal eventuallySettles = fairness.implies(eventually(allSettled))
 ```
 
 ### Temporal Properties
@@ -102,6 +160,8 @@ temporal intentsResolveShort =
 // it does NOT prove deadlock freedom; unexplored paths may still be stuck.
 // For a formal check use an explicit enabledness invariant:
 //   val notDeadlocked = enabled(step)
+// `enabled` is NOT supported by the simulator: `quint run` fails with QNT501.
+// It is only usable under `quint verify` (Apalache/TLC).
 // or run exhaustive finite-state checking with TLC.
 // Always add a stutter branch (all { var1' = var1, ... }) so the model never
 // gets stuck when no meaningful action applies.

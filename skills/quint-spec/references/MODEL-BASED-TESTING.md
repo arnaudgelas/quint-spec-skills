@@ -18,9 +18,26 @@ Quint provides three complementary commands for testing and verification, each s
 
 `quint test` runs named `run` blocks defined with the `run` keyword. Unlike `quint run`, each `run` block specifies its own expected sequence with `.then()` / `.expect()`. Tests are deterministic when the run is deterministic or seeded; randomized tests can use `--max-samples` and `--seed`.
 
+> **CRITICAL -- `quint test` only runs `run` definitions whose name ends in `Test`.**
+> Without `--match`, every other `run` block is skipped **silently**: it is not
+> listed, not counted, and does not affect the exit code. A file whose `run`
+> blocks are all named something else prints the module name and **exits 0**,
+> which is indistinguishable from passing.
+>
+> ```
+> run happyPath  = init.then(step).then(all { assert(x == 99), x' = x })  // skipped, silently
+> run brokenTest = init.then(step).then(all { assert(x == 99), x' = x })  // runs, fails
+> ```
+>
+> Name every test `<something>Test`, and treat a run that reports **no** passing
+> count as a failure, not a success.
+
 ```bash
-# Run all named `run` blocks in the spec
+# Runs ONLY `run` definitions whose name ends in `Test`
 quint test spec.qnt
+
+# Run every `run` block regardless of name
+quint test spec.qnt --match '.*'
 
 # Run only blocks matching a pattern
 quint test spec.qnt --match deposit
@@ -35,7 +52,7 @@ quint test spec.qnt --match deposit
 **Example `run` block:**
 
 ```quint sketch
-run depositWithdrawRoundTrip =
+run depositWithdrawRoundTripTest =
   init
     .then(deposit("alice", 100))
     .expect(totalAssets == 100 and amountOf(userShares, "alice") > 0)
@@ -65,7 +82,8 @@ quint run --mbt --out-itf=trace_{seq}.itf.json spec.qnt
 If verification finds a violation, you can export the exact sequence of steps that triggered the bug to prove it exists in the implementation:
 
 ```bash
-quint verify --out-itf=bug.itf.json spec.qnt
+# An invariant is required -- without one there is no violation to export.
+quint verify --invariant=balancesConserved --out-itf=bug.itf.json spec.qnt
 ```
 
 ---
@@ -87,7 +105,8 @@ When requested, generate a custom test runner in the user's specific stack (e.g.
 > **State synchronization drift:** Step-by-step trace replay accumulates divergence.
 > Each step applies an implementation action and then asserts the implementation state
 > matches the Quint state. If the mapping is off by even 1 unit at step N (e.g., from
-> integer division rounding or a uint256 overflow that Quint's `int` does not model),
+> integer division rounding, or a uint256 overflow that Quint does not model -- note
+> the default Rust backend does raise QNT601 at i64, which is a _different_ bound),
 > the assertion at step N+1 compares against the _wrong expected state_, and every
 > subsequent assertion may pass for the wrong reason. Mitigations:
 >
@@ -103,7 +122,7 @@ When requested, generate a custom test runner in the user's specific stack (e.g.
 Every test runner needs four components:
 
 1. **Parser**: Read the `trace.itf.json` file. An ITF file contains an array of states, where each state includes the values of all variables.
-2. **State Mapper**: Translate Quint types (e.g., arbitrarily large integers, Maps, Sets) into language-specific types (e.g., `uint256`, HashMaps, Structs).
+2. **State Mapper**: Translate Quint types (Maps, Sets, and integers -- unbounded in Apalache, i64 under the default Rust simulator) into language-specific types (e.g., `uint256`, HashMaps, Structs).
 3. **Action Mapper (The Harness)**: Infer which action occurred between `state[i]` and `state[i+1]` and call the corresponding implementation function.
 4. **Assertion Engine**: After applying the action, verify that the implementation's state matches the expected `state[i+1]` from the Quint trace.
 
@@ -124,8 +143,13 @@ function runTrace(traceFile, implementation) {
     const currentState = trace.states[i]
     const nextState = trace.states[i + 1]
 
-    // Determine which action caused the transition from mbt::actionTaken
-    const action = inferAction(currentState, nextState)
+    // Read the action directly from the trace. `quint run --mbt` records it as
+    // `mbt::actionTaken`, together with `mbt::nondetPicks` (the nondeterministic
+    // arguments the simulator chose). Do NOT re-derive the action by diffing
+    // states: a diff cannot recover the nondet picks, so the harness would replay
+    // different arguments than the spec did and still report agreement.
+    const action = nextState['mbt::actionTaken']
+    const picks = nextState['mbt::nondetPicks']
 
     // 3. Execution
     executeMappedAction(implementation, action)
@@ -146,7 +170,7 @@ function runTrace(traceFile, implementation) {
 When building a runner for a specific stack, follow these guidelines:
 
 - **Rust (CosmWasm, Cosmos-SDK)**: [**Quint Connect**](https://github.com/informalsystems/quint-connect) is Informal Systems' Rust MBT library for ITF parsing, state mapping, and test harness generation for Rust/CosmWasm stacks. Check the repository for its current release status before depending on it; availability and API stability may have changed since this reference was written.
-- **Smart Contracts (Solidity/Foundry)**: Use `ffi` (Foreign Function Interface) or file-read utilities to load the JSON. Map Quint's `Address` strings to actual hex addresses. Ensure precision issues (like Quint's infinite ints vs `uint256`) are mapped correctly.
+- **Smart Contracts (Solidity/Foundry)**: Use `ffi` (Foreign Function Interface) or file-read utilities to load the JSON. Map Quint's `Address` strings to actual hex addresses. Map integer bounds explicitly: Quint's `int` is unbounded under Apalache but i64 under the default Rust simulator, and neither matches `uint256` wraparound.
 - **Go (Cosmos-SDK, Backend)**: Use `encoding/json` to unmarshal the ITF file. The runner acts as a standard Go test suite, initializing the keeper/module with the genesis state derived from the first ITF state.
 - **TypeScript (Node.js/Frontend)**: The easiest environment, as JSON parsing is native. Map Quint Maps to JS `Map` or objects.
 
