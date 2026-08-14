@@ -88,6 +88,21 @@ if (args.has('--help')) {
       `  Every block -- including 'sketch' -- is parsed, and these error classes fail the`,
       `  build regardless of label: ${HARD_ERROR_CODES.join(', ')}.`,
       '  QNT404/QNT405 are tolerated because fragments legitimately reference outside names.',
+      '',
+      'Runtime mode (--run): a block with init+step is executed against the',
+      'invariants named in its <!-- quint-check --> directive:',
+      '',
+      '  <!-- quint-check',
+      '  main: BankTest',
+      '  invariants: noNegativeSupply supplyMatchesBalances',
+      '  witnesses: witnessNeverFilled witnessNeverSettled',
+      '  maxSteps: 12          # optional, default 12',
+      '  maxSamples: 2000      # optional, default 2000',
+      '  -->',
+      '',
+      'Invariants must HOLD. Witnesses must be VIOLATED -- a witness that holds',
+      "means its state is unreachable and the block's invariants are vacuous.",
+      'With --strict-labels, a runnable block with no directive fails the build.',
     ].join('\n'),
   )
   process.exit(0)
@@ -142,23 +157,53 @@ async function getMarkdownFiles() {
 // The preamble is placed inside the synthesized wrapper module for a fragment,
 // or verbatim BEFORE the code for a block that declares its own module(s) --
 // which is how a snippet that does `import BankModule.*` gets its dependency.
-const PREAMBLE_OPEN = '<!-- quint-preamble'
+// Directives attach to a fence as HTML comments immediately preceding it. A
+// fence may carry both, in either order:
+//
+//   <!-- quint-preamble ... -->        declarations compiled with the block
+//   <!-- quint-check
+//   main: BankTest
+//   invariants: noNegativeSupply supplyMatchesBalances
+//   witnesses: witnessNeverFilled witnessNeverSettled
+//   -->
+//
+// `invariants` must HOLD. `witnesses` must be VIOLATED -- a witness that holds
+// means the state it describes is unreachable, so every invariant on that block
+// is passing vacuously. That is the failure mode this skill exists to warn
+// about, so CI enforces it rather than trusting the author.
+function directivesFor(content, fenceStartIndex) {
+  const result = { preamble: '', check: null }
+  let before = content.slice(0, fenceStartIndex)
 
-function preambleFor(content, fenceStartIndex) {
-  const before = content.slice(0, fenceStartIndex)
-  // Anchor on the LAST opener, then require that its `-->` is the final thing
-  // before the fence. A leftmost regex match would start at the first preamble
-  // in the file and swallow every one in between.
-  const open = before.lastIndexOf(PREAMBLE_OPEN)
-  if (open < 0) return ''
-  const close = before.indexOf('-->', open)
-  if (close < 0) return ''
-  // Nothing but whitespace may separate the comment from the fence.
-  if (before.slice(close + 3).trim() !== '') return ''
-  return before
-    .slice(open + PREAMBLE_OPEN.length, close)
-    .replace(/^[ \t]*\r?\n/, '')
-    .trimEnd()
+  // Walk backwards over a run of comments separated only by whitespace.
+  for (;;) {
+    const trimmed = before.replace(/\s+$/, '')
+    if (!trimmed.endsWith('-->')) break
+    const open = trimmed.lastIndexOf('<!--')
+    if (open < 0) break
+    const body = trimmed.slice(open + 4, trimmed.length - 3)
+    const marker = body.trimStart().split(/\s|\n/)[0]
+    if (marker === 'quint-preamble') {
+      result.preamble = body.replace(/^\s*quint-preamble[ \t]*\r?\n?/, '').trimEnd()
+    } else if (marker === 'quint-check') {
+      const spec = body.replace(/^\s*quint-check[ \t]*\r?\n?/, '')
+      const field = (name) => {
+        const m = spec.match(new RegExp(`^\\s*${name}:\\s*(.*)$`, 'm'))
+        return m ? m[1].trim() : ''
+      }
+      result.check = {
+        main: field('main') || null,
+        invariants: field('invariants').split(/\s+/).filter(Boolean),
+        witnesses: field('witnesses').split(/\s+/).filter(Boolean),
+        maxSteps: Number(field('maxSteps')) || null,
+        maxSamples: Number(field('maxSamples')) || null,
+      }
+    } else {
+      break // an unrelated comment ends the run
+    }
+    before = trimmed.slice(0, open)
+  }
+  return result
 }
 
 function extractQuintBlocks(content) {
@@ -195,7 +240,7 @@ function extractQuintBlocks(content) {
       kind,
       labels,
       code: match[2],
-      preamble: preambleFor(content, match.index),
+      ...directivesFor(content, match.index),
     })
   }
   return blocks
@@ -257,11 +302,28 @@ function runQuintParse(filePath) {
 // them to --invariants is what makes runtime mode a real check: without an
 // explicit invariant, quint defaults to the literal `true`, so the run can only
 // ever catch a crash and never a violated property.
-function declaredInvariants(code) {
-  return [...code.matchAll(/^\s*val\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/gm)].map((m) => m[1])
+// Which invariants a runnable block asserts, and which witnesses must fail.
+// Taken from the block's `quint-check` directive -- never guessed. Deriving the
+// list by regex over `val` also picked up let-bindings nested inside actions,
+// which are not invariants and made `quint run` fail with QNT404.
+function checkSpecFor(block) {
+  if (!block.check) return null
+  return {
+    main: block.check.main,
+    invariants: block.check.invariants,
+    witnesses: block.check.witnesses,
+  }
 }
 
-function runQuintRuntime(filePath, mainModule, invariants) {
+// Search budget. A witness must actually FIND its state, so the default has to
+// be wide enough to reach it -- 20 samples x 5 steps silently reports "not
+// violated" for anything a few actions deep, which would turn the vacuity gate
+// into the very false-confidence it exists to prevent. Blocks needing a deeper
+// search set maxSteps/maxSamples in their quint-check directive.
+const DEFAULT_MAX_STEPS = 12
+const DEFAULT_MAX_SAMPLES = 2000
+
+function runQuintRuntime(filePath, mainModule, invariants, budget = {}) {
   // `--main null` was previously possible: runtimeMainModuleName can return
   // null and Node coerces it to the string "null". Omit the flag instead and
   // let quint infer the module.
@@ -272,7 +334,12 @@ function runQuintRuntime(filePath, mainModule, invariants) {
   if (invariants.length > 0) {
     argv.push('--invariants', ...invariants)
   }
-  argv.push('--max-samples', '20', '--max-steps', '5')
+  argv.push(
+    '--max-samples',
+    String(budget.maxSamples ?? DEFAULT_MAX_SAMPLES),
+    '--max-steps',
+    String(budget.maxSteps ?? DEFAULT_MAX_STEPS),
+  )
   return spawnSync(quintBin, argv, {
     encoding: 'utf8',
     timeout: QUINT_TIMEOUT_MS,
@@ -427,6 +494,8 @@ async function validate() {
   let failedBlocks = 0
   let hardErrorBlocks = 0
   let valScopeLeaks = 0
+  let vacuousWitnesses = 0
+  let runnableWithoutSpec = 0
   let suspiciousTextBlocks = 0
 
   try {
@@ -505,6 +574,18 @@ async function validate() {
           }
         }
 
+        if (
+          runExecutable &&
+          canRunSnippet(quintCode) &&
+          shouldValidate(block.kind) &&
+          !block.check
+        ) {
+          runnableWithoutSpec++
+          console.error(
+            `\n⚠️  ${path.relative(repoRoot, file)} (block ${i + 1}) defines init+step but has no <!-- quint-check --> directive, so nothing is asserted about it.`,
+          )
+        }
+
         if (!shouldValidate(block.kind) || (runExecutable && !canRunSnippet(quintCode))) {
           continue
         }
@@ -514,13 +595,49 @@ async function validate() {
         const filePath = path.join(tmpDir, fileName)
         await writeFile(filePath, quintCode)
 
+        const spec = runExecutable ? checkSpecFor(block) : null
         const result = runExecutable
           ? runQuintRuntime(
               filePath,
-              runtimeMainModuleName(quintCode),
-              declaredInvariants(quintCode),
+              spec?.main ?? runtimeMainModuleName(quintCode),
+              spec?.invariants ?? [],
+              { maxSteps: spec?.maxSteps, maxSamples: spec?.maxSamples },
             )
           : runQuintValidation(filePath)
+
+        // Witness gate: each named witness MUST be violated. A witness that
+        // holds means its state is unreachable, so the block's real invariants
+        // are passing vacuously -- exactly the failure this skill warns about.
+        if (runExecutable && spec) {
+          for (const witness of spec.witnesses) {
+            const wResult = runQuintRuntime(
+              filePath,
+              spec.main ?? runtimeMainModuleName(quintCode),
+              [witness],
+              { maxSteps: spec.maxSteps, maxSamples: spec.maxSamples },
+            )
+            const out = `${wResult.stdout ?? ''}${wResult.stderr ?? ''}`
+            // NOT a substring test for "violation": the success message is
+            // "[ok] No violation found", which contains it. Require the
+            // bracketed marker AND a non-zero exit.
+            const violated = wResult.status !== 0 && /\[violation\]|Invariant violated/.test(out)
+            if (wResult.status !== 0 && !violated) {
+              // Non-zero for some other reason (compile/runtime error) -- that is
+              // a failure of the block, not evidence about the witness.
+              failedBlocks++
+              console.error(
+                `\n❌ Error in ${path.relative(repoRoot, file)} (block ${i + 1}) while checking witness \`${witness}\`:`,
+              )
+              console.error(wResult.stderr || wResult.stdout || '')
+            } else if (!violated) {
+              vacuousWitnesses++
+              console.error(
+                `\n❌ Vacuity in ${path.relative(repoRoot, file)} (block ${i + 1}): witness \`${witness}\` was NOT violated.\n` +
+                  `   The state it describes is unreachable, so this block's invariants hold vacuously.`,
+              )
+            }
+          }
+        }
         // Blocks validated above skipped the standalone gate parse; apply the
         // gate to the result we already have so coverage stays 100%.
         if (hardErrorGate && willBeValidatedAnyway) {
@@ -556,6 +673,25 @@ async function validate() {
   if (hardErrorGate) {
     console.log(`Hard-error gate: ${totalQuintBlocks} blocks scanned, ${hardErrorBlocks} failed`)
     console.log(`val-scope leaks: ${valScopeLeaks}`)
+  }
+
+  if (runExecutable) {
+    console.log(`Runnable blocks without a quint-check directive: ${runnableWithoutSpec}`)
+    console.log(`Vacuous witnesses: ${vacuousWitnesses}`)
+  }
+
+  if (vacuousWitnesses > 0) {
+    console.error(
+      `\nValidation failed: ${vacuousWitnesses} witness(es) were not violated. Those states are unreachable and the surrounding invariants are vacuous.`,
+    )
+    process.exit(1)
+  }
+
+  if (runExecutable && strictLabels && runnableWithoutSpec > 0) {
+    console.error(
+      `\nValidation failed: ${runnableWithoutSpec} runnable block(s) assert nothing. Add a <!-- quint-check --> directive naming the invariants (and witnesses) to check.`,
+    )
+    process.exit(1)
   }
 
   if (hardErrorGate && valScopeLeaks > 0) {

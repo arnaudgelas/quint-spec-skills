@@ -10,6 +10,11 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-TEMPLATES.md`.
 
 Models a process that moves through a series of states (e.g., a ticket system, a governance proposal, or a fulfillment pipeline).
 
+<!-- quint-check
+main: WorkflowTest
+invariants: idUnique onlyApproversApprove
+-->
+
 ```quint illustrative
 module WorkflowTypes {
   type RequestId = int
@@ -114,6 +119,9 @@ module Workflow {
     req.status == Approved implies eventually(requests.get(id).status == Completed or requests.get(id).status == Cancelled)
   )
 }
+module WorkflowTest {
+  import Workflow(USERS = Set("u1", "u2"), APPROVERS = Set("a1")).*
+}
 ```
 
 ---
@@ -121,6 +129,11 @@ module Workflow {
 ## Generic Resource Allocation
 
 A general pattern for managing any finite resource (CPU, memory, permissions, seats) among participants.
+
+<!-- quint-check
+main: ResourceAllocationTest
+invariants: capacityRespected totalMatchesSum
+-->
 
 ```quint illustrative
 module ResourceTypes {
@@ -199,5 +212,12 @@ module ResourceAllocation {
       sum + if (pMap.keys().contains(r)) pMap.get(r) else 0
     )
   )
+}
+module ResourceAllocationTest {
+  import ResourceAllocation(
+    RESOURCES = Set("cpu"),
+    PARTICIPANTS = Set("p1", "p2"),
+    TOTAL_CAPACITY = Map("cpu" -> 20),
+  ).*
 }
 ```

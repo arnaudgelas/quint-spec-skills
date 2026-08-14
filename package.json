@@ -33,7 +33,7 @@
     "validate:quint:typecheck": "node scripts/validate-quint-snippets.mjs --typecheck --strict-labels",
     "validate:quint:all": "node scripts/validate-quint-snippets.mjs --all --strict-labels",
     "validate:quint:all:typecheck": "node scripts/validate-quint-snippets.mjs --all --typecheck --strict-labels",
-    "validate:quint:runtime": "node scripts/validate-quint-snippets.mjs --run --strict-labels"
+    "validate:quint:runtime": "node scripts/validate-quint-snippets.mjs --run --all --strict-labels"
   },
   "devDependencies": {
     "@informalsystems/quint": "0.32.0",

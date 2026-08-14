@@ -14,6 +14,11 @@ template to your protocol.
 
 ## Bank Accounting Core
 
+<!-- quint-check
+main: ExecutableBankTemplate
+invariants: noNegativeSupply supplyMatchesBalances
+-->
+
 ```quint executable
 module ExecutableBankTemplate {
   type Address = str
@@ -75,6 +80,11 @@ module ExecutableBankTemplate {
 ```
 
 ## Stateful Workflow Core
+
+<!-- quint-check
+main: ExecutableWorkflowTemplateTest
+invariants: completedWereApproved
+-->
 
 ```quint executable
 module ExecutableWorkflowTemplate {
@@ -168,6 +178,11 @@ module ExecutableWorkflowTemplateTest {
 ```
 
 ## Intent Lifecycle Core
+
+<!-- quint-check
+main: ExecutableIntentTemplate
+invariants: knownStatuses
+-->
 
 ```quint executable
 module ExecutableIntentTemplate {
@@ -354,6 +369,11 @@ module ExecutableIntentTemplate {
 
 ## Escrow / Fill / Settle Core
 
+<!-- quint-check
+main: ExecutableEscrowFillSettleTemplate
+invariants: settledOrdersHaveFiller
+-->
+
 ```quint executable
 module ExecutableEscrowFillSettleTemplate {
   type Address = str
@@ -510,6 +530,11 @@ module ExecutableEscrowFillSettleTemplate {
 ```
 
 ## AMM Constant Product Core
+
+<!-- quint-check
+main: ExecutableAmmTemplateTest
+invariants: reservesSolvent
+-->
 
 ```quint executable
 module ExecutableAmmTemplate {

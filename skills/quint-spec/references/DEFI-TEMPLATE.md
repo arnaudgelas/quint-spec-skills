@@ -75,6 +75,11 @@ val feeConservation = applyFee(1000) + (1000 * FEE_BPS / BPS_DENOM) <= 1000
 
 The foundation for any protocol that manages token balances.
 
+<!-- quint-check
+main: BankTest
+invariants: supplyConserved noNegativeBalances noNegativeSupply
+-->
+
 ```quint illustrative
 module BankTypes {
   type Address = str
@@ -164,6 +169,13 @@ module Bank {
 
   val noNegativeSupply = DENOMS.forall(d => getSupply(totalSupply, d) >= 0)
 }
+module BankTest {
+  import Bank(
+    ADDRESSES = Set("alice", "bob"),
+    DENOMS = Set("uatom"),
+    MAX_AMOUNT = 20,
+  ).*
+}
 ```
 
 ---
@@ -171,6 +183,11 @@ module Bank {
 ## AMM Pool (Constant Product)
 
 Constant product market maker with swap fees.
+
+<!-- quint-check
+main: AMMTest
+invariants: kNonDecreasing reservesSolvent
+-->
 
 ```quint illustrative
 module AMMTypes {
@@ -270,6 +287,9 @@ module AMM {
   // No negative reserves
   val reservesSolvent = pool.reserve0 >= 0 and pool.reserve1 >= 0
 }
+module AMMTest {
+  import AMM(USERS = Set("alice", "bob"), MAX_AMOUNT = 20).*
+}
 ```
 
 ---
@@ -277,6 +297,11 @@ module AMM {
 ## ERC-4626 Vault (Share/Asset Conversion)
 
 Tokenized vault with deposit/withdraw and share accounting.
+
+<!-- quint-check
+main: VaultTest
+invariants: roundingFavorsVault vaultSolvent
+-->
 
 ```quint illustrative
 module Vault {
@@ -364,6 +389,9 @@ module Vault {
   // Solvency: vault always has enough assets to cover shares
   val vaultSolvent = totalAssets >= 0 and totalShares >= 0
 }
+module VaultTest {
+  import Vault(USERS = Set("alice", "bob"), MAX_DEPOSIT = 20).*
+}
 ```
 
 ---
@@ -371,6 +399,11 @@ module Vault {
 ## Lending Position (Health Factor)
 
 Basic lending with collateral, borrowing, and liquidation.
+
+<!-- quint-check
+main: LendingTest
+invariants: protocolSolvent noNegativePositions
+-->
 
 ```quint illustrative
 module Lending {
@@ -472,11 +505,26 @@ module Lending {
   val protocolSolvent =
     val totalColl = USERS.fold(0, (sum, u) => sum + amountOf(collateral, u))
     val totalDebt = USERS.fold(0, (sum, u) => sum + amountOf(borrows, u))
-    totalColl * oraclePrice >= totalDebt * 100 or totalDebt == 0
+    // Units must match the borrow guard. `healthFactor` compares
+    // `coll * price * 100 / debt` against COLLATERAL_FACTOR, i.e. it treats debt
+    // as a raw amount and collateral as amount x price. Writing
+    // `totalColl * oraclePrice >= totalDebt * 100` here instead demands 100x
+    // overcollateralization, so the invariant is violated by any ordinary
+    // borrow that the guard permits -- alice deposits 21, borrows 60, and the
+    // spec reports insolvency on a healthy position.
+    totalDebt == 0 or totalColl * oraclePrice >= totalDebt
 
   // No negative positions
   val noNegativePositions = USERS.forall(u =>
     amountOf(collateral, u) >= 0 and amountOf(borrows, u) >= 0
   )
+}
+module LendingTest {
+  import Lending(
+    USERS = Set("alice", "bob"),
+    COLLATERAL_FACTOR = 150,
+    LIQUIDATION_BONUS = 5,
+    PRICE_RANGE = Set(90, 100, 110),
+  ).*
 }
 ```

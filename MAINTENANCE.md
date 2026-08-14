@@ -66,6 +66,37 @@ Rules:
   element is `QNT404`, or silently resolves to an outer definition. Hoist the
   binding above the `all {`.
 
+### Runtime checks and the vacuity gate
+
+A block defining `init` and `step` is executed in `--run` mode. What it asserts
+comes from a `quint-check` directive, never from guesswork:
+
+    <!-- quint-check
+    main: BankTest
+    invariants: noNegativeSupply supplyMatchesBalances
+    witnesses: witnessNeverFilled witnessNeverSettled
+    maxSteps: 12
+    maxSamples: 2000
+    -->
+
+- `invariants` must **hold**.
+- `witnesses` must be **violated**. A witness names a state the model is supposed
+  to be able to reach (`witnessNeverFilled = orders.forall(o => o != Filled)`).
+  If it holds, that state is unreachable, the lifecycle is stalled, and every
+  invariant on the block is passing **vacuously**. This is not hypothetical: the
+  escrow template shipped with `Filled` and `Settled` unreachable because
+  `init` seeded balances for `USERS` but not `FILLERS`, and both of its safety
+  invariants reported `[ok]` on a protocol that could not execute.
+- `maxSteps`/`maxSamples` default to 12/2000. They must be wide enough to
+  actually reach the witness state -- too small a budget reports "not violated"
+  for a reachable state and turns the gate into the false confidence it exists
+  to prevent.
+- Under `--strict-labels`, a runnable block with no directive fails the build, so
+  new templates cannot silently assert nothing.
+
+Verify the gate still bites after changing it: break a model so a witness state
+becomes unreachable and confirm the run exits non-zero.
+
 ## Governance expectations
 
 - `ci-executable-only`: only `executable` fences run in CI.

@@ -5,6 +5,11 @@ Use these as syntax-accurate references for current Quint releases.
 
 ## Counter State Machine
 
+<!-- quint-check
+main: CounterTest
+invariants: bounded
+-->
+
 ```quint executable
 module Counter {
   const MAX: int
@@ -69,6 +74,11 @@ module TokenBank {
 ```
 
 ## Nondeterministic Step Pattern
+
+<!-- quint-check
+main: NondetStepTest
+invariants: seenIsSubset
+-->
 
 ```quint executable
 module NondetStep {

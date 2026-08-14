@@ -11,6 +11,11 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 
 Full send/receive/ack/timeout packet flow for fungible token transfers.
 
+<!-- quint-check
+main: ICS20Test
+invariants: escrowConserved noDoubleProcessing
+-->
+
 ```quint illustrative
 module ICS20Types {
   type ChainId = str
@@ -289,10 +294,27 @@ module ICS20 {
   // No two distinct packets with the same (srcChannel, sequence) pair are both acknowledged
   val noDoubleProcessing = acks.forall(pair1 =>
     acks.forall(pair2 =>
-      (pair1._1.srcChannel == pair2._1.srcChannel and pair1._1.sequence == pair2._1.sequence)
+      // A packet's identity is (srcChain, srcChannel, sequence). Every chain runs
+      // its OWN send-sequence counter, so omitting srcChain makes chainA's
+      // packet #1 collide with chainB's packet #1 on the same channel id, and
+      // this invariant reports double processing for two unrelated transfers.
+      (pair1._1.srcChain == pair2._1.srcChain
+        and pair1._1.srcChannel == pair2._1.srcChannel
+        and pair1._1.sequence == pair2._1.sequence)
         implies pair1 == pair2
     )
   )
+}
+module ICS20Test {
+  import ICS20(
+    CHAINS = Set("chainA", "chainB"),
+    CHANNELS = Set("channel-0"),
+    USERS = Set("alice", "bob"),
+    DENOMS = Set({ path: List(), base: "uatom" }),
+    MAX_AMOUNT = 10,
+    MAX_HEIGHT = 20,
+    INITIAL_BALANCE = 100,
+  ).*
 }
 ```
 
@@ -324,6 +346,12 @@ module ChainNetwork {
 ## Threshold Verification (m-of-n)
 
 Model multi-signature or threshold verification for bridge validators.
+
+<!-- quint-check
+main: ThresholdBridgeTest
+invariants: onlyThresholdExecuted noDoubleExecution
+witnesses: witnessNeverExecuted
+-->
 
 ```quint illustrative
 module ThresholdBridge {
@@ -406,6 +434,12 @@ module ThresholdBridgeTest {
 
 Generic cross-chain transfer pattern with escrow on source, fill on destination,
 and settlement or timeout refund.
+
+<!-- quint-check
+main: EscrowFillSettleTest
+invariants: noStuckOrders noNegativeBalances
+witnesses: witnessNeverFilled witnessNeverSettled
+-->
 
 ```quint illustrative
 module EscrowFillSettle {
@@ -584,5 +618,12 @@ module EscrowFillSettle {
   //   quint run --invariant=witnessNeverFilled spec.qnt   -> expect a violation
   val witnessNeverFilled = orderStatus.keys().forall(id => orderStatus.get(id) != Filled)
   val witnessNeverSettled = orderStatus.keys().forall(id => orderStatus.get(id) != Settled)
+}
+module EscrowFillSettleTest {
+  import EscrowFillSettle(
+    USERS = Set("alice", "bob"),
+    FILLERS = Set("f1"),
+    MAX_AMOUNT = 10,
+  ).*
 }
 ```

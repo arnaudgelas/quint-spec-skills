@@ -8,6 +8,12 @@ Templates for modeling multi-component systems, service-oriented architectures, 
 
 Models a system with multiple services that communicate by sending and receiving messages. This pattern is ideal for microservices, actor systems, or distributed protocols.
 
+<!-- quint-check
+main: SystemArchTest
+invariants: waitingHasReason
+witnesses: witnessNeverWaiting
+-->
+
 ```quint illustrative
 module MsgTypes {
   type ServiceId = str
@@ -130,6 +136,11 @@ module SystemArchTest {
 
 Models a system where multiple processes access shared resources via a locking mechanism.
 
+<!-- quint-check
+main: SharedResourceTest
+invariants: mutualExclusion
+-->
+
 ```quint illustrative
 module LockTypes {
   type ProcessId = str
@@ -190,5 +201,11 @@ module SharedResource {
       | Free => true
     }
   )
+}
+module SharedResourceTest {
+  import SharedResource(
+    PROCESSES = Set("p1", "p2"),
+    RESOURCES = Set("r1"),
+  ).*
 }
 ```

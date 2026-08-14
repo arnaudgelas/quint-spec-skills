@@ -13,6 +13,11 @@ For syntax-validated runnable counterparts, use `EXECUTABLE-EXAMPLES.md`.
 Models the full lifecycle of a cross-chain intent from creation through
 settlement or expiry.
 
+<!-- quint-check
+main: IntentLifecycleTest
+invariants: fillsSatisfyConstraints intentTokensConserved terminalStatesStable totalBalanceConserved
+-->
+
 ```quint illustrative
 module IntentTypes {
   type Address = str
@@ -273,6 +278,16 @@ module IntentLifecycle {
       )
     )
 }
+module IntentLifecycleTest {
+  import IntentLifecycle(
+    USERS = Set("alice"),
+    SOLVERS = Set("solver1"),
+    CHAINS = Set("chainA", "chainB"),
+    TOKENS = Set("tokenA"),
+    MAX_AMOUNT = 10,
+    INITIAL_BALANCE = 100,
+  ).*
+}
 ```
 
 ---
@@ -280,6 +295,12 @@ module IntentLifecycle {
 ## Solver Competition with Fairness
 
 Models multiple solvers competing to fill intents with fairness tracking.
+
+<!-- quint-check
+main: SolverCompetitionTest
+invariants: fillsAccountedFor noSolverFillsUnassigned
+witnesses: witnessBalancedDistribution
+-->
 
 ```quint illustrative
 module SolverCompetition {
@@ -337,6 +358,9 @@ module SolverCompetition {
     if (totalFills < SOLVERS.size() * 2) true
     else SOLVERS.forall(s => fillCount(s) <= (totalFills / SOLVERS.size()) * 2)
 }
+module SolverCompetitionTest {
+  import SolverCompetition(SOLVERS = Set("s1", "s2", "s3"), NUM_INTENTS = 6).*
+}
 ```
 
 ---
@@ -345,6 +369,11 @@ module SolverCompetition {
 
 All orders in a batch clear at the same price. Ensures no order gets
 a worse price than their limit.
+
+<!-- quint-check
+main: BatchAuctionTest
+invariants: uniformPrice limitsRespected
+-->
 
 ```quint illustrative
 module BatchAuction {
@@ -457,6 +486,13 @@ module BatchAuction {
     )
   )
 }
+module BatchAuctionTest {
+  import BatchAuction(
+    TRADERS = Set("t1", "t2"),
+    MAX_AMOUNT = 10,
+    PRICE_RANGE = Set(900, 1000, 1100),
+  ).*
+}
 ```
 
 ---
@@ -465,6 +501,12 @@ module BatchAuction {
 
 Fills are assumed valid during a challenge period. Anyone can challenge
 with proof of invalidity.
+
+<!-- quint-check
+main: OptimisticVerificationTest
+invariants: onlyDishonestChallenged
+witnesses: witnessInvalidFinalization
+-->
 
 ```quint illustrative
 module OptimisticVerification {
@@ -601,5 +643,12 @@ module OptimisticVerification {
     val record = fillRecords.get(id)
     (fillStatus.get(id) == Verified) implies (record.claimedOutput <= record.actualOutput)
   )
+}
+module OptimisticVerificationTest {
+  import OptimisticVerification(
+    SOLVERS = Set("s1", "s2"),
+    CHALLENGERS = Set("c1"),
+    CHALLENGE_PERIOD = 3,
+  ).*
 }
 ```

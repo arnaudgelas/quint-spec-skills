@@ -35,7 +35,7 @@ jobs:
         run: npm run validate:quint:typecheck
       - name: Typecheck all Quint snippets
         run: npm run validate:quint:all:typecheck
-      - name: Execute runnable Quint snippets (checks declared invariants)
+      - name: Execute runnable snippets (invariants + vacuity witness gate)
         run: npm run validate:quint:runtime
       - name: Validate doc freshness rules (offline)
         run: npm run upstream:check -- --offline
