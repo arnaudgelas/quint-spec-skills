@@ -78,6 +78,7 @@ The foundation for any protocol that manages token balances.
 <!-- quint-check
 main: BankTest
 invariants: supplyConserved noNegativeBalances noNegativeSupply
+witnesses: witnessNeverTwoFunded
 -->
 
 ```quint illustrative
@@ -175,6 +176,12 @@ module BankTest {
     DENOMS = Set("uatom"),
     MAX_AMOUNT = 20,
   ).*
+
+  // Reachability witness: MUST be violated. Proves a transfer between two
+  // distinct accounts actually happens, not merely a mint.
+  val witnessNeverTwoFunded =
+    not(ADDRESSES.exists(a => ADDRESSES.exists(b =>
+      a != b and getBalance(balances, a, "uatom") > 0 and getBalance(balances, b, "uatom") > 0)))
 }
 ```
 
@@ -187,6 +194,7 @@ Constant product market maker with swap fees.
 <!-- quint-check
 main: AMMTest
 invariants: kNonDecreasing reservesSolvent
+witnesses: witnessNeverSwapped
 -->
 
 ```quint illustrative
@@ -286,6 +294,10 @@ module AMM {
 
   // No negative reserves
   val reservesSolvent = pool.reserve0 >= 0 and pool.reserve1 >= 0
+
+  // Reachability witness: MUST be violated. Proves a swap executes, not just
+  // liquidity provision.
+  val witnessNeverSwapped = pool.reserve0 == pool.reserve1
 }
 module AMMTest {
   import AMM(USERS = Set("alice", "bob"), MAX_AMOUNT = 20).*
@@ -301,6 +313,7 @@ Tokenized vault with deposit/withdraw and share accounting.
 <!-- quint-check
 main: VaultTest
 invariants: roundingFavorsVault vaultSolvent
+witnesses: witnessNeverHasShares
 -->
 
 ```quint illustrative
@@ -388,6 +401,9 @@ module Vault {
 
   // Solvency: vault always has enough assets to cover shares
   val vaultSolvent = totalAssets >= 0 and totalShares >= 0
+
+  // Reachability witness: MUST be violated. Proves shares are actually issued.
+  val witnessNeverHasShares = totalShares == 0
 }
 module VaultTest {
   import Vault(USERS = Set("alice", "bob"), MAX_DEPOSIT = 20).*
@@ -403,6 +419,7 @@ Basic lending with collateral, borrowing, and liquidation.
 <!-- quint-check
 main: LendingTest
 invariants: protocolSolvent noNegativePositions
+witnesses: witnessNeverBorrowed
 -->
 
 ```quint illustrative
@@ -526,5 +543,9 @@ module LendingTest {
     LIQUIDATION_BONUS = 5,
     PRICE_RANGE = Set(90, 100, 110),
   ).*
+
+  // Reachability witness: MUST be violated. Proves a borrow actually happens --
+  // without it every solvency invariant is about a protocol with no debt.
+  val witnessNeverBorrowed = USERS.forall(u => amountOf(borrows, u) == 0)
 }
 ```

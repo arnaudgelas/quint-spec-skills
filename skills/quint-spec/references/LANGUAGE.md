@@ -115,7 +115,9 @@ def balanceOf(a: Address): int =
 ```quint illustrative
 action deposit(sender: Address, amount: int): bool = all {
   amount > 0,
-  balances' = balances.setBy(sender, b => b + amount),
+  // `put` with an explicit current value. `setBy` raises QNT507 at runtime on a
+  // key the map does not already contain -- and a first-time depositor has none.
+  balances' = balances.put(sender, balanceOf(sender) + amount),
   totalDeposits' = totalDeposits + amount,
 }
 ```
@@ -399,7 +401,8 @@ m.set(key, value)                    // Replace existing key; fails if key is mi
 m.setBy(key, f)                      // Update existing key by function; fails if key is missing
 m.keys()                             // Set of keys
 keys.mapBy(k => v)                   // Build map from key set (keys is Set[K]; this is a Set method)
-f[e]                                 // Lookup by bracket syntax (same as f.get(e))
+// NOTE: there is NO bracket lookup for maps. `m[k]` fails with
+// "Couldn't unify list and fun" -- bracket syntax desugars to `nth`, i.e. lists only.
 ```
 
 ### Temporal (for verification)
@@ -453,11 +456,18 @@ run myTest =
 > entire trace fails, which also passes if `init` or `action1` failed for an
 > unrelated reason. To assert that one specific action is rejected, isolate it:
 >
-> ```quint sketch
-> run rejectsOverdraftTest =
->   init
->     .then(deposit("alice", 10))
->     .then(withdraw("alice", 999).fail())   // only this action must fail
+> ```quint illustrative
+> module OverdraftTest {
+>   var balance: int
+>   action init = balance' = 0
+>   action deposit(who: str, n: int): bool = balance' = balance + n
+>   action withdraw(who: str, n: int): bool = all { balance >= n, balance' = balance - n }
+>
+>   run rejectsOverdraftTest =
+>     init
+>       .then(deposit("alice", 10))
+>       .then(withdraw("alice", 999).fail())   // only this action must fail
+> }
 > ```
 
 ## Common Idioms
@@ -528,9 +538,13 @@ pure def amountOf(m: Msg): int =
 > `QNT008: Reserved keyword 'match' cannot be used as an identifier`. Destructure one
 > level at a time, delegating the inner type to a helper:
 >
-> ```quint sketch
-> pure def inner(i: Inner): int = match i { | Prepare(n) => n | Commit(n) => n }
-> pure def outer(m: Msg): int = match m { | Request(x) => inner(x) | Reply(n) => n }
+> ```quint illustrative
+> module NestedMatch {
+>   type Inner = Prepare(int) | Commit(int)
+>   type Msg = Request(Inner) | Reply(int)
+>   pure def inner(i: Inner): int = match i { | Prepare(n) => n | Commit(n) => n }
+>   pure def outer(m: Msg): int = match m { | Request(x) => inner(x) | Reply(n) => n }
+> }
 > ```
 
 ## Assert (Action Mode)

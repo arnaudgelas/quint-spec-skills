@@ -139,6 +139,7 @@ Models a system where multiple processes access shared resources via a locking m
 <!-- quint-check
 main: SharedResourceTest
 invariants: mutualExclusion
+witnesses: witnessNeverHeld
 -->
 
 ```quint illustrative
@@ -201,6 +202,10 @@ module SharedResource {
       | Free => true
     }
   )
+
+  // Reachability witness: MUST be violated. Proves a lock is actually acquired --
+  // mutualExclusion is trivially true if no lock is ever held.
+  val witnessNeverHeld = RESOURCES.forall(r => locks.get(r) == Free)
 }
 module SharedResourceTest {
   import SharedResource(

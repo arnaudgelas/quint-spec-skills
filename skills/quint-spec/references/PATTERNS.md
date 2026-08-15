@@ -345,7 +345,13 @@ const DEPOSIT_AMOUNTS: Set[int]
 var shares: str -> int
 var totalShares: int
 var totalAssets: int
-def userAssets(u: str): int = if (shares.keys().contains(u)) shares.get(u) else 0
+def userAssets(u: str): int =
+  // ASSETS, not shares: converting the user's shares at the current rate.
+  // A stub returning the share count makes shareAccountingSound compare
+  // shares to assets, so it holds only at a 1:1 rate -- exactly the case
+  // where rounding bugs cannot appear.
+  val sh = if (shares.keys().contains(u)) shares.get(u) else 0
+  if (totalShares == 0) 0 else sh * totalAssets / totalShares
 pure def assetsToShares(a: int, totA: int, totS: int): int =
   if (totS == 0 or totA == 0) a else a * totS / totA
 pure def sharesToAssets(sh: int, totA: int, totS: int): int =

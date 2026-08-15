@@ -154,9 +154,17 @@ module defiSpells {
   pure def getBalance(bals: str -> (str -> int), addr: str, denom: str): int =
     if (bals.keys().contains(addr) and bals.get(addr).keys().contains(denom))
       bals.get(addr).get(denom) else 0
+  pure def updateBalance(
+    bals: str -> (str -> int), addr: str, denom: str, delta: int
+  ): str -> (str -> int) = {
+    val addrBals = if (bals.keys().contains(addr)) bals.get(addr) else Map()
+    val current = if (addrBals.keys().contains(denom)) addrBals.get(denom) else 0
+    bals.put(addr, addrBals.put(denom, current + delta))
+  }
   pure def transferBalance(
     bals: str -> (str -> int), from: str, receiver: str, denom: str, amount: int
-  ): str -> (str -> int) = bals
+  ): str -> (str -> int) =
+    bals.updateBalance(from, denom, -amount).updateBalance(receiver, denom, amount)
 }
 -->
 

@@ -214,13 +214,16 @@ Once a Quint specification is verified, use it to generate the **Interface** or 
 <!-- quint-preamble
 type Address = str
 var balances: Address -> int
+def balanceOf(a: Address): int =
+  if (balances.keys().contains(a)) balances.get(a) else 0
 -->
 
 ```quint illustrative
 // Quint Action
 action deposit(sender: Address, amount: int): bool = all {
   amount > 0,
-  balances' = balances.setBy(sender, b => b + amount),
+  // `put`, not `setBy`: setBy raises QNT507 on a first-time depositor.
+  balances' = balances.put(sender, balanceOf(sender) + amount),
 }
 ```
 

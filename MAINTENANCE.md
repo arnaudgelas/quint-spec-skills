@@ -15,8 +15,9 @@
   block. Not deep-typechecked -- but still subject to the hard-error gate below.
 - Unlabeled `\`\`\`quint` fences are not allowed in CI (`--strict-labels`).
 
-**There are currently ZERO `sketch` fences: all 81 Quint blocks are deep-typechecked
-in CI.** Keep it that way. `sketch` is an escape hatch for a block that genuinely
+**There are currently ZERO `sketch` fences: all 83 Quint blocks are deep-typechecked
+in CI**, and the count is enforced by a floor in the validator (`QUINT_MIN_BLOCKS`)
+so a doc edit cannot silently drop coverage. Keep it that way. `sketch` is an escape hatch for a block that genuinely
 cannot be made to compile, not a way to skip validation. Check with:
 
 ```bash

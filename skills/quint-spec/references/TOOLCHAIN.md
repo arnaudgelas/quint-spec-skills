@@ -136,9 +136,19 @@ explicitly when reproducibility matters.
 | `--mbt`                 | `false`  | Embed model-based testing metadata in the ITF trace                         |
 | `--hide <v1> <v2>`      | `[]`     | Variables to hide from trace output                                         |
 
-> **`--witnesses` vs `--invariant` for reachability:**  
-> `--witnesses w` reports when a state _satisfying_ `w` is found (confirms reachability).  
-> `--invariant=w` reports when `w` is _violated_ (same result, opposite framing). Both approaches are valid; `--witnesses` is more idiomatic for positive reachability checks.
+> **`--witnesses` vs `--invariant` for reachability -- NOT interchangeable.**
+> `--witnesses w` prints how many traces satisfied `w` and **always exits 0**, even at
+> `0.00%`. It reports; it cannot gate.
+> `--invariant=w` exits **1** when `w` is violated.
+>
+> ```
+> quint run spec.qnt --witnesses unreachableThing   -> "witnessed in 0 trace(s) (0.00%)", exit 0
+> quint run spec.qnt --invariant=neverReachesTwo    -> [violation], exit 1
+> ```
+>
+> So to _prove_ a state is reachable in CI, assert the negation as an invariant and
+> require the violation -- `--witnesses` alone will pass a spec whose interesting
+> state can never occur. Use `--witnesses` for human-readable coverage reporting only.
 
 ### quint verify
 

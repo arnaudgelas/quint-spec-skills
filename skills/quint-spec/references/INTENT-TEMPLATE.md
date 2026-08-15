@@ -16,6 +16,7 @@ settlement or expiry.
 <!-- quint-check
 main: IntentLifecycleTest
 invariants: fillsSatisfyConstraints intentTokensConserved terminalStatesStable totalBalanceConserved
+witnesses: witnessNeverSettled
 -->
 
 ```quint illustrative
@@ -277,7 +278,12 @@ module IntentLifecycle {
         circulating + locked == supply
       )
     )
+
+  // Reachability witness: MUST be violated. Proves an intent reaches Settled;
+  // without it the conservation invariants describe a protocol that never runs.
+  val witnessNeverSettled = status.keys().forall(id => status.get(id) != Settled)
 }
+
 module IntentLifecycleTest {
   import IntentLifecycle(
     USERS = Set("alice"),
@@ -373,6 +379,7 @@ a worse price than their limit.
 <!-- quint-check
 main: BatchAuctionTest
 invariants: uniformPrice limitsRespected
+witnesses: witnessNeverCleared
 -->
 
 ```quint illustrative
@@ -492,6 +499,9 @@ module BatchAuctionTest {
     MAX_AMOUNT = 10,
     PRICE_RANGE = Set(900, 1000, 1100),
   ).*
+
+  // Reachability witness: MUST be violated. Proves the batch actually clears.
+  val witnessNeverCleared = clearingPrice == 0
 }
 ```
 

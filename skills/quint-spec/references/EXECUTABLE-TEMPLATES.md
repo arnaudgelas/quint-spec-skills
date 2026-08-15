@@ -17,6 +17,7 @@ template to your protocol.
 <!-- quint-check
 main: ExecutableBankTemplate
 invariants: noNegativeSupply supplyMatchesBalances
+witnesses: witnessNeverTwoFunded
 -->
 
 ```quint executable
@@ -76,6 +77,11 @@ module ExecutableBankTemplate {
     totalSupply.keys().forall(d =>
       supplyOf(totalSupply, d) ==
         balances.keys().filter(k => k._2 == d).fold(0, (sum, k) => sum + balances.get(k)))
+
+  // Reachability witness: MUST be violated. Proves `send` fires, not only `mint`.
+  val witnessNeverTwoFunded =
+    not(balances.keys().exists(k1 => balances.keys().exists(k2 =>
+      k1 != k2 and balances.get(k1) > 0 and balances.get(k2) > 0)))
 }
 ```
 
@@ -84,6 +90,7 @@ module ExecutableBankTemplate {
 <!-- quint-check
 main: ExecutableWorkflowTemplateTest
 invariants: completedWereApproved
+witnesses: witnessNeverCompleted
 -->
 
 ```quint executable
@@ -165,6 +172,11 @@ module ExecutableWorkflowTemplate {
   val completedWereApproved = requests.keys().forall(id =>
     requests.get(id).status == Completed implies requests.get(id).approver != ""
   )
+
+  // Reachability witness: MUST be violated. Proves the full create->approve->
+  // complete chain fires, not just `create`.
+  val witnessNeverCompleted =
+    requests.keys().forall(id => requests.get(id).status != Completed)
 }
 
 // A module with `const` parameters cannot run on its own -- `quint run` reports
@@ -182,6 +194,7 @@ module ExecutableWorkflowTemplateTest {
 <!-- quint-check
 main: ExecutableIntentTemplate
 invariants: knownStatuses
+witnesses: witnessNeverSettled
 -->
 
 ```quint executable
@@ -220,7 +233,12 @@ module ExecutableIntentTemplate {
     intents' = Map(),
     status' = Map(),
     intentSolver' = Map(),
-    balances' = Map(),
+    // Seed the participants. With `balances' = Map()` every balance guard reads 0,
+    // so createIntent and fillIntent can never fire and the intent never reaches
+    // Settled -- yet `advanceHeight` still runs, so the trace advances and a
+    // deadlock check does NOT catch it. Only a reachability witness does.
+    balances' = tuples(Set("chainA", "chainB"), Set("alice", "bob", "solver1", "solver2"),
+                       Set("tokenIn", "tokenOut")).mapBy(k => 1000),
     nextIntentId' = 1,
     currentHeight' = 1,
   }
@@ -364,6 +382,9 @@ module ExecutableIntentTemplate {
   val knownStatuses = status.keys().forall(id =>
     status.get(id) == Pending or status.get(id) == Filled or status.get(id) == Settled or status.get(id) == Expired
   )
+
+  // Reachability witness: MUST be violated. Proves settlement is reachable.
+  val witnessNeverSettled = status.keys().forall(id => status.get(id) != Settled)
 }
 ```
 
@@ -372,6 +393,7 @@ module ExecutableIntentTemplate {
 <!-- quint-check
 main: ExecutableEscrowFillSettleTemplate
 invariants: settledOrdersHaveFiller
+witnesses: witnessNeverSettled
 -->
 
 ```quint executable
@@ -408,8 +430,11 @@ module ExecutableEscrowFillSettleTemplate {
     orders' = Map(),
     orderStatus' = Map(),
     orderFiller' = Map(),
-    sourceBalances' = Map(),
-    destBalances' = Map(),
+    // Seed senders AND fillers. An empty map makes every balance guard read 0, so
+    // `fill` never fires and no order reaches Settled, while `advanceHeight` keeps
+    // the trace moving so the model does not look stalled.
+    sourceBalances' = tuples(Set("alice", "bob", "filler1"), Set("uatom")).mapBy(k => 1000),
+    destBalances' = tuples(Set("alice", "bob", "filler1"), Set("uatom")).mapBy(k => 1000),
     nextOrderId' = 1,
     currentHeight' = 1,
   }
@@ -526,6 +551,10 @@ module ExecutableEscrowFillSettleTemplate {
   val settledOrdersHaveFiller =
     orderStatus.keys().forall(id =>
       orderStatus.get(id) == Settled implies orderFiller.keys().contains(id))
+
+  // Reachability witness: MUST be violated. Proves settlement is reachable.
+  val witnessNeverSettled =
+    orderStatus.keys().forall(id => orderStatus.get(id) != Settled)
 }
 ```
 
@@ -534,6 +563,7 @@ module ExecutableEscrowFillSettleTemplate {
 <!-- quint-check
 main: ExecutableAmmTemplateTest
 invariants: reservesSolvent
+witnesses: witnessNeverSwapped
 -->
 
 ```quint executable
@@ -589,6 +619,9 @@ module ExecutableAmmTemplateTest {
     FEE_NUMERATOR = 3,
     FEE_DENOMINATOR = 1000,
   ).*
+
+  // Reachability witness: MUST be violated. Proves a swap executes.
+  val witnessNeverSwapped = reserve0 == 1000
 }
 ```
 

@@ -8,6 +8,7 @@ Use these as syntax-accurate references for current Quint releases.
 <!-- quint-check
 main: CounterTest
 invariants: bounded
+witnesses: witnessNeverIncremented
 -->
 
 ```quint executable
@@ -29,6 +30,9 @@ module Counter {
   }
 
   val bounded = value >= 0 and value <= MAX
+
+  // Reachability witness: MUST be violated.
+  val witnessNeverIncremented = value == 0
 }
 
 module CounterTest {
@@ -78,6 +82,7 @@ module TokenBank {
 <!-- quint-check
 main: NondetStepTest
 invariants: seenIsSubset
+witnesses: witnessNeverSeen
 -->
 
 ```quint executable
@@ -100,6 +105,9 @@ module NondetStep {
   }
 
   val seenIsSubset = seen.forall(u => USERS.contains(u))
+
+  // Reachability witness: MUST be violated.
+  val witnessNeverSeen = seen.size() == 0
 }
 
 module NondetStepTest {

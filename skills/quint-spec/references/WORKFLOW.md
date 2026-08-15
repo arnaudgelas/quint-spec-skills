@@ -314,6 +314,7 @@ action mint(a: Address, d: Denom, n: int): bool = all {
   balances' = addBalance(balances, a, d, n),
   totalSupply' = totalSupply.put(d, supplyOf(d) + n) }
 action transfer(f: Address, t: Address, d: Denom, n: int): bool = all {
+  n > 0,
   balanceOf(balances, f, d) >= n,
   f != t,
   balances' = addBalance(addBalance(balances, f, d, -n), t, d, n),

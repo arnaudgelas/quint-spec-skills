@@ -206,11 +206,70 @@ function directivesFor(content, fenceStartIndex) {
   return result
 }
 
+// Every line that OPENS a Quint fence in any CommonMark-legal form. Used as an
+// anti-escape audit: if the scanner below extracts fewer blocks than this finds,
+// something is escaping every gate, so the build fails rather than quietly
+// reporting a smaller "N/N scanned".
+// A fence indented 4+ spaces is NOT a fence in CommonMark -- it is literal text
+// inside an indented code block (that is how MAINTENANCE.md shows an example of
+// the directive syntax). So the extractor keeps CommonMark's 0-3 space rule; the
+// audit below counts the same way and reports deeper-indented ones separately as
+// informational, never as an escape.
+const ANY_QUINT_FENCE = /^[ \t]{0,3}(?:>[ \t]?)*(?:`{3,}|~{3,})[ \t]*quint\b/gim
+const DEEP_QUINT_FENCE = /^[ ]{4,}(?:`{3,}|~{3,})[ \t]*quint\b/gim
+
+function countQuintFenceOpeners(content) {
+  // Openers only: a closer carries no info string, so requiring `quint` after
+  // the ticks already excludes closers.
+  return (content.match(ANY_QUINT_FENCE) ?? []).length
+}
+
+function countIndentedQuintFences(content) {
+  return (content.match(DEEP_QUINT_FENCE) ?? []).length
+}
+
+// Hand-rolled scanner rather than one regex. The previous single regex required
+// EXACTLY three backticks at indent 0-3 with no blockquote marker, so ~~~quint,
+// ````quint, blockquoted and list-indented (4+ space) fences were invisible --
+// rendered as Quint to every reader, never seen by any gate. A closer with more
+// backticks than the opener also failed to terminate, silently merging two blocks
+// into one under the first block's label.
 function extractQuintBlocks(content) {
   const blocks = []
-  const regex = /^[ \t]{0,3}```quint(?:\s+([^\n`]+))?\s*\n([\s\S]*?)^[ \t]{0,3}```[ \t]*$/gm
-  let match
-  while ((match = regex.exec(content)) !== null) {
+  const lines = content.split('\n')
+  const OPEN = /^([ \t]{0,3})((?:>[ \t]?)*)(`{3,}|~{3,})[ \t]*quint\b([^\n`]*)$/i
+
+  for (let i = 0; i < lines.length; i++) {
+    const open = lines[i].match(OPEN)
+    if (!open) continue
+    const [, , quote, fence, info] = open
+    const fenceChar = fence[0]
+    const fenceLen = fence.length
+    const stripQuote = (line) => (quote ? line.replace(/^[ \t]*(?:>[ \t]?)*/, '') : line)
+    // Closer: same character, at least as long, nothing after it but whitespace.
+    const closer = new RegExp(`^[ \\t]*(?:>[ \\t]?)*\\${fenceChar}{${fenceLen},}[ \\t]*$`)
+    let end = -1
+    for (let j = i + 1; j < lines.length; j++) {
+      if (closer.test(lines[j])) {
+        end = j
+        break
+      }
+    }
+    if (end < 0) continue
+    // Trailing newline is load-bearing: quint fails a final-line `//` comment
+    // with QNT000 when the file does not end in a newline.
+    const code =
+      lines
+        .slice(i + 1, end)
+        .map(stripQuote)
+        .join('\n') + '\n'
+    const startIndex = lines.slice(0, i).reduce((n, l) => n + l.length + 1, 0)
+    blocks.push({ raw: { info, code, startIndex } })
+    i = end
+  }
+
+  return blocks.map(({ raw }) => {
+    const match = [null, raw.info.trim() || undefined, raw.code, raw.startIndex]
     const labelRaw = match[1] ?? ''
     const labels = labelRaw
       .split(/\s+/)
@@ -236,14 +295,13 @@ function extractQuintBlocks(content) {
     if (labels.includes('illustrative')) kind = 'illustrative'
     if (labels.includes('sketch')) kind = 'sketch'
 
-    blocks.push({
+    return {
       kind,
       labels,
       code: match[2],
-      ...directivesFor(content, match.index),
-    })
-  }
-  return blocks
+      ...directivesFor(content, match[3]),
+    }
+  })
 }
 
 function extractSuspiciousTextBlocks(content) {
@@ -312,6 +370,10 @@ function checkSpecFor(block) {
     main: block.check.main,
     invariants: block.check.invariants,
     witnesses: block.check.witnesses,
+    // These were parsed but not forwarded, so the documented per-block budget
+    // override silently did nothing and every block ran at the default.
+    maxSteps: block.check.maxSteps,
+    maxSamples: block.check.maxSamples,
   }
 }
 
@@ -497,12 +559,27 @@ async function validate() {
   let vacuousWitnesses = 0
   let runnableWithoutSpec = 0
   let stalledBlocks = 0
+  let blocksWithoutWitness = 0
+  let escapedFences = 0
+  let indentedFenceNotes = 0
   let suspiciousTextBlocks = 0
 
   try {
     for (const file of files) {
       const content = await readFile(file, 'utf8')
       const blocks = extractQuintBlocks(content)
+      // Anti-escape audit: every Quint fence opener in the file must have been
+      // extracted. A fence form the scanner misses is rendered as authoritative
+      // Quint to the reader while bypassing every gate, and the summary would
+      // still say "N/N scanned" -- a gate satisfied by absence.
+      const openers = countQuintFenceOpeners(content)
+      if (openers !== blocks.length) {
+        escapedFences += Math.abs(openers - blocks.length)
+        console.error(
+          `\n❌ Fence escape in ${path.relative(repoRoot, file)}: ${openers} quint fence opener(s) present but ${blocks.length} extracted.`,
+        )
+      }
+      indentedFenceNotes += countIndentedQuintFences(content)
       const textBlocks = extractSuspiciousTextBlocks(content)
       suspiciousTextBlocks += textBlocks.length
 
@@ -573,6 +650,19 @@ async function validate() {
             )
             console.error(gateResult.stderr || gateResult.stdout || '')
           }
+        }
+
+        if (
+          runExecutable &&
+          canRunSnippet(quintCode) &&
+          shouldValidate(block.kind) &&
+          block.check &&
+          block.check.witnesses.length === 0
+        ) {
+          blocksWithoutWitness++
+          console.error(
+            `\n⚠️  ${path.relative(repoRoot, file)} (block ${i + 1}) declares invariants but no witness, so nothing proves its guarded actions can fire.`,
+          )
         }
 
         if (
@@ -702,6 +792,41 @@ async function validate() {
 
   if (runExecutable) {
     console.log(`Stalled models (max trace length 1): ${stalledBlocks}`)
+  }
+
+  if (runExecutable) {
+    console.log(`Runnable blocks without a witness: ${blocksWithoutWitness}`)
+  }
+  console.log(`Fence escapes: ${escapedFences}`)
+  if (indentedFenceNotes > 0) {
+    console.log(
+      `Indented (4+ space) quint fences, treated as literal text by CommonMark and skipped: ${indentedFenceNotes}`,
+    )
+  }
+
+  if (escapedFences > 0) {
+    console.error(
+      `\nValidation failed: ${escapedFences} quint fence(s) were not extracted and therefore bypassed every gate.`,
+    )
+    process.exit(1)
+  }
+
+  // Coverage floor. Without it, a doc edit that drops most blocks still prints
+  // "Validation successful" -- the summary counts whatever extraction happened to
+  // return and never compares it to what the repo is known to contain.
+  const MIN_TOTAL_BLOCKS = Number(process.env.QUINT_MIN_BLOCKS ?? 83)
+  if (totalQuintBlocks < MIN_TOTAL_BLOCKS) {
+    console.error(
+      `\nValidation failed: found ${totalQuintBlocks} quint blocks but expected at least ${MIN_TOTAL_BLOCKS}.\nIf blocks were removed deliberately, lower the floor (QUINT_MIN_BLOCKS or the constant) in the same commit.`,
+    )
+    process.exit(1)
+  }
+
+  if (runExecutable && strictLabels && blocksWithoutWitness > 0) {
+    console.error(
+      `\nValidation failed: ${blocksWithoutWitness} runnable block(s) declare invariants with no reachability witness.\nThe advance gate only proves SOME transition fires; it cannot prove the guarded actions the invariants are about are reachable. Add a \`witnesses:\` entry naming a state that must be reachable.`,
+    )
+    process.exit(1)
   }
 
   if (stalledBlocks > 0) {

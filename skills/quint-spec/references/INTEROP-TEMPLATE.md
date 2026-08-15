@@ -14,6 +14,7 @@ Full send/receive/ack/timeout packet flow for fungible token transfers.
 <!-- quint-check
 main: ICS20Test
 invariants: escrowConserved noDoubleProcessing
+witnesses: witnessNeverAcked
 -->
 
 ```quint illustrative
@@ -315,6 +316,10 @@ module ICS20Test {
     MAX_HEIGHT = 20,
     INITIAL_BALANCE = 100,
   ).*
+
+  // Reachability witness: MUST be violated. Proves a packet is actually received
+  // (producing an ack), not merely sent.
+  val witnessNeverAcked = acks.size() == 0
 }
 ```
 

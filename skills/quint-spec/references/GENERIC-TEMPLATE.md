@@ -13,6 +13,7 @@ Models a process that moves through a series of states (e.g., a ticket system, a
 <!-- quint-check
 main: WorkflowTest
 invariants: idUnique onlyApproversApprove
+witnesses: witnessNeverCompleted
 -->
 
 ```quint illustrative
@@ -130,6 +131,12 @@ module Workflow {
     val req = requests.get(id)
     req.status == Approved implies eventually(requests.get(id).status == Completed or requests.get(id).status == Cancelled)
   )
+
+  // Reachability witness: MUST be violated. Proves the workflow reaches a
+  // terminal state -- this is the check that would have caught the state-0
+  // deadlock that an empty-set `oneOf()` used to cause here.
+  val witnessNeverCompleted =
+    requests.keys().forall(id => requests.get(id).status != Completed)
 }
 module WorkflowTest {
   import Workflow(USERS = Set("u1", "u2"), APPROVERS = Set("a1")).*
@@ -145,6 +152,7 @@ A general pattern for managing any finite resource (CPU, memory, permissions, se
 <!-- quint-check
 main: ResourceAllocationTest
 invariants: capacityRespected totalMatchesSum
+witnesses: witnessNeverAllocated
 -->
 
 ```quint illustrative
@@ -224,7 +232,13 @@ module ResourceAllocation {
       sum + if (pMap.keys().contains(r)) pMap.get(r) else 0
     )
   )
+
+  // Reachability witness: MUST be violated. Proves allocation actually happens.
+  val witnessNeverAllocated =
+    RESOURCES.forall(r =>
+      not(totalAllocated.keys().contains(r)) or totalAllocated.get(r) == 0)
 }
+
 module ResourceAllocationTest {
   import ResourceAllocation(
     RESOURCES = Set("cpu"),
