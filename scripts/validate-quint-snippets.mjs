@@ -496,6 +496,7 @@ async function validate() {
   let valScopeLeaks = 0
   let vacuousWitnesses = 0
   let runnableWithoutSpec = 0
+  let stalledBlocks = 0
   let suspiciousTextBlocks = 0
 
   try {
@@ -605,6 +606,25 @@ async function validate() {
             )
           : runQuintValidation(filePath)
 
+        // Advance gate: the model must actually take a step. `quint run` reports
+        // "Trace length statistics: max=N"; N == 1 means only the initial state
+        // was ever reached, so every invariant is vacuously true. This catches a
+        // stalled model WITHOUT relying on the author having written a witness --
+        // the Workflow template deadlocked in state 0 for exactly this reason and
+        // still reported [ok], because its witness list was empty.
+        if (runExecutable && spec && result.status === 0) {
+          const traceMax = `${result.stdout ?? ''}${result.stderr ?? ''}`.match(
+            /Trace length statistics: max=(\d+)/,
+          )
+          if (traceMax && Number(traceMax[1]) <= 1) {
+            stalledBlocks++
+            console.error(
+              `\n❌ Stalled model in ${path.relative(repoRoot, file)} (block ${i + 1}): no \`step\` transition is ever enabled (max trace length 1).\n` +
+                `   Every invariant on this block is vacuously true. A common cause is a \`nondet ... .oneOf()\` over a set that is empty at init, hoisted above \`any {}\`, which disables every branch.`,
+            )
+          }
+        }
+
         // Witness gate: each named witness MUST be violated. A witness that
         // holds means its state is unreachable, so the block's real invariants
         // are passing vacuously -- exactly the failure this skill warns about.
@@ -678,6 +698,17 @@ async function validate() {
   if (runExecutable) {
     console.log(`Runnable blocks without a quint-check directive: ${runnableWithoutSpec}`)
     console.log(`Vacuous witnesses: ${vacuousWitnesses}`)
+  }
+
+  if (runExecutable) {
+    console.log(`Stalled models (max trace length 1): ${stalledBlocks}`)
+  }
+
+  if (stalledBlocks > 0) {
+    console.error(
+      `\nValidation failed: ${stalledBlocks} model(s) never leave the initial state, so their invariants are vacuous.`,
+    )
+    process.exit(1)
   }
 
   if (vacuousWitnesses > 0) {

@@ -93,6 +93,32 @@ comes from a `quint-check` directive, never from guesswork:
   to prevent.
 - Under `--strict-labels`, a runnable block with no directive fails the build, so
   new templates cannot silently assert nothing.
+- **Advance gate.** Independently of witnesses, every runnable block must actually
+  take a step: `quint run` reports `Trace length statistics: max=N`, and `N == 1`
+  means only the initial state was reached, so every invariant is vacuously true.
+  This is witness-free, so it protects blocks whose author wrote no witnesses --
+  which is how the Workflow template deadlocked in state 0 while reporting `[ok]`.
+  The usual cause is a `nondet x = S.oneOf()` over a set that is empty at `init`,
+  hoisted above an `any {}`: a disabled `nondet` disables every branch beneath it,
+  including branches that never use `x`.
+
+## Symbolic verification (Apalache)
+
+The gates above use bounded random simulation. For symbolic bounded checking run
+Apalache, which explores all paths to a given depth rather than sampling:
+
+```bash
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21   # see TOOLCHAIN.md on keg-only JDKs
+export PATH="$JAVA_HOME/bin:$PATH"
+quint verify <spec>.qnt --main=<Instance> --invariant="a,b" --max-steps=4
+```
+
+All 22 runnable blocks have been checked this way at `--max-steps=4` (about 6-21s
+each). Apalache is what found the Workflow deadlock -- `quint run` reported `[ok]`
+on it because random simulation cannot distinguish "no violation" from "no
+transitions". This is NOT wired into CI: it needs a JVM, and the runtime is
+sensitive to constant sizes. Run it manually before a release, or after changing
+any template's actions or constants.
 
 Verify the gate still bites after changing it: break a model so a witness state
 becomes unreachable and confirm the run exits non-zero.

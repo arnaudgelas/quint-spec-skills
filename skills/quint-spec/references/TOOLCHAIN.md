@@ -25,6 +25,30 @@ For formal verification (`quint verify`), Apalache is required:
 - Apalache requires **Java 17 or newer** (bytecode compatibility floor) and
   **recommends Java 25** (Eclipse Temurin or Zulu); Java 17 is less thoroughly
   tested upstream. `quint verify` will not start on an older JVM.
+
+> **If `quint verify` dies before doing anything**, check the JVM first. On Java 11
+> it fails with:
+>
+> ```
+> Unrecognized VM option 'G1PeriodicGCInterval=600000'
+> Error: Could not create the Java Virtual Machine.
+> ```
+>
+> `G1PeriodicGCInterval` is a Java 12+ flag, so this is purely a version problem --
+> Apalache itself downloaded fine.
+>
+> On macOS the usual cause is not a missing JDK but a **keg-only Homebrew JDK that
+> is not on `PATH`**. `brew install openjdk@21` does not register the JDK with
+> `/usr/libexec/java_home`, so `java -version` still reports the old system JDK and
+> the newer one looks absent. Check for it explicitly and point `JAVA_HOME` at it:
+>
+> ```bash
+> ls -d /opt/homebrew/opt/openjdk@*        # or /usr/local/opt on Intel
+> export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+> export PATH="$JAVA_HOME/bin:$PATH"
+> quint verify spec.qnt --invariant=myInvariant
+> ```
+
 - Apalache is automatically invoked by `quint verify`
 
 ## CLI Command Inventory (Synced)

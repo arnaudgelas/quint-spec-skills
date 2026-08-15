@@ -92,16 +92,28 @@ module Workflow {
       nextId' = nextId,
     }
 
+  // `nondet id = requests.keys().oneOf()` must NOT be hoisted above the `any`.
+  // `oneOf()` on an empty set is disabled, and a disabled nondet at the top of
+  // `step` disables EVERY branch under it -- including `createRequest`, which
+  // does not use `id`. Since `requests` is empty at `init`, the whole model then
+  // deadlocks in state 0 while its invariants still report [ok], because an
+  // invariant over an empty map is vacuously true. Guard the id-dependent
+  // branches instead.
   action step = {
     nondet user = USERS.oneOf()
     nondet approver = APPROVERS.oneOf()
-    nondet id = requests.keys().oneOf()
     any {
       createRequest(user, "data"),
-      approveRequest(approver, id),
-      startProgress(id),
-      completeRequest(id),
-      cancelRequest(id),
+      all {
+        requests.keys().size() > 0,
+        nondet id = requests.keys().oneOf()
+        any {
+          approveRequest(approver, id),
+          startProgress(id),
+          completeRequest(id),
+          cancelRequest(id),
+        },
+      },
     }
   }
 
