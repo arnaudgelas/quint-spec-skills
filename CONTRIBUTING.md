@@ -10,12 +10,12 @@ Thank you for your interest in improving the Quint Specification Skill!
 2.  Follow the workflow described in `SKILL.md`.
 3.  Label Quint code fences:
     - `\`\`\`quint executable` for standalone snippets that should pass parser validation.
-    - `\`\`\`quint illustrative` for self-contained examples that should typecheck in the deep audit.
-    - `\`\`\`quint sketch` for partial Quint fragments that are counted but intentionally not typechecked.
+    - `\`\`\`quint illustrative` for examples that must typecheck in CI, with a hidden preamble when context is required.
+    - `\`\`\`quint sketch`for partial Quint fragments checked by the hard-error and scope gates. Files declaring`ci-all-fences` cannot contain sketches.
 4.  Validate snippets:
 
     ```bash
-    # CI-equivalent validation (executable fences only)
+    # Strict executable parser validation
     npm run validate:quint -- --strict-labels
 
     # Stronger executable validation (parse + type/effect checks)
@@ -24,10 +24,11 @@ Thank you for your interest in improving the Quint Specification Skill!
     # Ensure all reference markdown files are policy-declared and covered
     npm run validate:references
 
-    # Deep audit: parse all executable and illustrative Quint fences
+    # CI: parse and typecheck every executable and illustrative Quint fence
     npm run validate:quint:all
+    npm run validate:quint:all:typecheck
 
-    # Runtime smoke for executable snippets that define init and step
+    # CI: invariants, reachability witnesses, and progress for all runnable blocks
     npm run validate:quint:runtime
     ```
 
@@ -55,7 +56,7 @@ npm run upstream:update
 ```
 
 If npm latest has moved past the pinned `@informalsystems/quint` version, first run
-`npm install --save-dev @informalsystems/quint@<latest>` and commit the package
+`npm install --save-dev --save-exact @informalsystems/quint@<version>` and commit the package
 and lockfile changes. The updater reads command inventory from the local pinned CLI.
 
 ## Development Standards
@@ -65,7 +66,8 @@ and lockfile changes. The updater reads command inventory from the local pinned 
 - **Linting**: Run `npm run lint` before committing.
 - **Formatting**: We use `prettier`. Run `npm run format` to auto-format your changes.
 - **Quint runtime for tooling**: The repository pins `@informalsystems/quint` in `package.json` for deterministic checks.
-- **Quint in user-facing docs**: Keep install instructions at `@latest` and rely on freshness automation to detect drift.
+- **Quint in user-facing docs**: Pin the tested version exactly (currently `@informalsystems/quint@0.32.0`), consistent with the package and upstream snapshot. Upgrade deliberately after validation.
+- **Apalache**: Quint 0.32.0 bundles Apalache 0.56.1; use Java 17 or newer for symbolic verification.
 
 ## License
 

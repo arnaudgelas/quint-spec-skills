@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile, writeFile, mkdtemp, rm, readdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { spawnSync } from 'node:child_process'
@@ -31,7 +31,8 @@ const KNOWN_FLAGS = new Set([
   '--help',
 ])
 const unknownFlags = [...args].filter((flag) => !KNOWN_FLAGS.has(flag))
-if (unknownFlags.length > 0) {
+const isDirectEntry = process.argv[1] && realpathSync(process.argv[1]) === __filename
+if (isDirectEntry && unknownFlags.length > 0) {
   console.error(`Unknown flag(s): ${unknownFlags.join(', ')}`)
   console.error(`Known flags: ${[...KNOWN_FLAGS].join(', ')}`)
   process.exit(2)
@@ -65,7 +66,7 @@ const QUINT_TIMEOUT_MS = 60_000
 const HARD_ERROR_CODES = ['QNT000', 'QNT008', 'QNT015', 'QNT101', 'QNT200', 'QNT201', 'QNT202']
 const HARD_ERROR_REGEX = new RegExp(`\\[(${HARD_ERROR_CODES.join('|')})\\]`, 'g')
 
-if (args.has('--help')) {
+if (isDirectEntry && args.has('--help')) {
   console.log(
     [
       'Usage:',
@@ -188,15 +189,24 @@ function directivesFor(content, fenceStartIndex) {
     } else if (marker === 'quint-check') {
       const spec = body.replace(/^\s*quint-check[ \t]*\r?\n?/, '')
       const field = (name) => {
-        const m = spec.match(new RegExp(`^\\s*${name}:\\s*(.*)$`, 'm'))
+        const m = spec.match(new RegExp(`^[ \\t]*${name}:[ \\t]*(.*)$`, 'm'))
         return m ? m[1].trim() : ''
+      }
+      const budget = (name) => {
+        const raw = field(name).split('#')[0].trim()
+        if (!raw) return null
+        const value = Number(raw)
+        if (!Number.isSafeInteger(value) || value <= 0) {
+          throw new Error(`quint-check ${name} must be a positive safe integer, received '${raw}'`)
+        }
+        return value
       }
       result.check = {
         main: field('main') || null,
         invariants: field('invariants').split(/\s+/).filter(Boolean),
         witnesses: field('witnesses').split(/\s+/).filter(Boolean),
-        maxSteps: Number(field('maxSteps')) || null,
-        maxSamples: Number(field('maxSamples')) || null,
+        maxSteps: budget('maxSteps'),
+        maxSamples: budget('maxSamples'),
       }
     } else {
       break // an unrelated comment ends the run
@@ -539,6 +549,22 @@ function findValScopeLeaks(rawCode) {
   return leaks
 }
 
+function materializeBlock(block, index = 1) {
+  let quintCode
+  if (declaresModule(block.code)) {
+    quintCode = block.preamble ? `${block.preamble}\n\n${block.code}` : block.code
+  } else if (declaresModule(block.preamble)) {
+    // The preamble supplies whole modules (e.g. the module a bare
+    // `import Foo.*` fragment depends on). Those must sit BESIDE the
+    // wrapper, not inside it -- Quint has no nested modules.
+    quintCode = `${block.preamble}\n\nmodule ValidationBlock${index} {\n${block.code}\n}`
+  } else {
+    const body = block.preamble ? `${block.preamble}\n${block.code}` : block.code
+    quintCode = `module ValidationBlock${index} {\n${body}\n}`
+  }
+  return quintCode
+}
+
 async function validate() {
   console.log('Validating Quint snippets in markdown files...')
   console.log(`Mode: ${runExecutable ? 'runtime' : typecheck ? 'typecheck' : 'parse'}`)
@@ -558,6 +584,7 @@ async function validate() {
   let valScopeLeaks = 0
   let vacuousWitnesses = 0
   let runnableWithoutSpec = 0
+  let blocksWithoutInvariant = 0
   let stalledBlocks = 0
   let blocksWithoutWitness = 0
   let escapedFences = 0
@@ -601,22 +628,11 @@ async function validate() {
         // Wrap in a dummy module if it doesn't look like one, folding in any
         // hidden preamble: inside the wrapper for a fragment, before the code
         // for a block that declares its own modules.
-        let quintCode
-        if (declaresModule(block.code)) {
-          quintCode = block.preamble ? `${block.preamble}\n\n${block.code}` : block.code
-        } else if (declaresModule(block.preamble)) {
-          // The preamble supplies whole modules (e.g. the module a bare
-          // `import Foo.*` fragment depends on). Those must sit BESIDE the
-          // wrapper, not inside it -- Quint has no nested modules.
-          quintCode = `${block.preamble}\n\nmodule ValidationBlock${totalQuintBlocks} {\n${block.code}\n}`
-        } else {
-          const body = block.preamble ? `${block.preamble}\n${block.code}` : block.code
-          quintCode = `module ValidationBlock${totalQuintBlocks} {\n${body}\n}`
-        }
+        const quintCode = materializeBlock(block, totalQuintBlocks)
 
         // ---- val-scope leak lint: runs on EVERY block, including `sketch` ----
         if (hardErrorGate) {
-          const leaks = findValScopeLeaks(block.code)
+          const leaks = findValScopeLeaks(quintCode)
           if (leaks.length > 0) {
             valScopeLeaks += leaks.length
             for (const leak of leaks) {
@@ -630,9 +646,8 @@ async function validate() {
         }
 
         // ---- Hard-error gate: runs on EVERY block, including `sketch` ----
-        // This is the only check that sees the ~56% of snippets the label
-        // policy exempts, which is where syntax errors and builtin-name
-        // collisions were previously shipping undetected.
+        // This also checks any sketch fences exempted by the label policy,
+        // so syntax errors and builtin-name collisions cannot bypass CI.
         // Blocks that shouldValidate() will check are parsed again below, so the
         // gate only needs its own subprocess for blocks nothing else looks at
         // (in practice: `sketch`). Without this the gate doubles the number of
@@ -650,6 +665,19 @@ async function validate() {
             )
             console.error(gateResult.stderr || gateResult.stdout || '')
           }
+        }
+
+        if (
+          runExecutable &&
+          canRunSnippet(quintCode) &&
+          shouldValidate(block.kind) &&
+          block.check &&
+          block.check.invariants.length === 0
+        ) {
+          blocksWithoutInvariant++
+          console.error(
+            `\n⚠️  ${path.relative(repoRoot, file)} (block ${i + 1}) has a quint-check directive but no invariant, so runtime defaults to true.`,
+          )
         }
 
         if (
@@ -787,6 +815,7 @@ async function validate() {
 
   if (runExecutable) {
     console.log(`Runnable blocks without a quint-check directive: ${runnableWithoutSpec}`)
+    console.log(`Runnable blocks without an invariant: ${blocksWithoutInvariant}`)
     console.log(`Vacuous witnesses: ${vacuousWitnesses}`)
   }
 
@@ -818,6 +847,13 @@ async function validate() {
   if (totalQuintBlocks < MIN_TOTAL_BLOCKS) {
     console.error(
       `\nValidation failed: found ${totalQuintBlocks} quint blocks but expected at least ${MIN_TOTAL_BLOCKS}.\nIf blocks were removed deliberately, lower the floor (QUINT_MIN_BLOCKS or the constant) in the same commit.`,
+    )
+    process.exit(1)
+  }
+
+  if (runExecutable && strictLabels && blocksWithoutInvariant > 0) {
+    console.error(
+      `\nValidation failed: ${blocksWithoutInvariant} runnable block(s) name no safety invariant. Add an explicit invariants: entry to quint-check.`,
     )
     process.exit(1)
   }
@@ -892,7 +928,11 @@ Validation successful: ${checkedBlocks} checked blocks passed.`)
   }
 }
 
-validate().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+export { extractQuintBlocks, materializeBlock, checkSpecFor, runtimeMainModuleName, canRunSnippet }
+
+if (isDirectEntry) {
+  validate().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}

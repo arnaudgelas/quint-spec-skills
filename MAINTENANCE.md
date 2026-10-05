@@ -3,14 +3,14 @@
 ## Quint freshness policy
 
 - Keep local references aligned with the upstream Quint CLI manual and npm package metadata.
-- Keep Apalache JVM requirements aligned with the official installation docs.
+- Keep Apalache JVM requirements aligned with the bundled release: Quint 0.32.0 defaults to Apalache 0.56.1 and requires Java 17+.
 - Avoid pinning static CLI defaults in markdown docs; prefer `quint <command> --help`.
 - Keep executable snippets aligned with the pinned Quint tool version.
 
 ## Snippet policy
 
-- `\`\`\`quint executable`: standalone snippets that must parse in CI.
-- `\`\`\`quint illustrative`: self-contained examples that must pass deep typecheck.
+- `\`\`\`quint executable`: standalone snippets that must parse and typecheck in CI.
+- `\`\`\`quint illustrative`: examples that must typecheck in CI, with hidden preambles where needed.
 - `\`\`\`quint sketch`: partial fragments that reference names defined outside the
   block. Not deep-typechecked -- but still subject to the hard-error gate below.
 - Unlabeled `\`\`\`quint` fences are not allowed in CI (`--strict-labels`).
@@ -21,7 +21,7 @@ so a doc edit cannot silently drop coverage. Keep it that way. `sketch` is an es
 cannot be made to compile, not a way to skip validation. Check with:
 
 ```bash
-node scripts/validate-quint-snippets.mjs --all --typecheck
+npm run validate:quint:all:typecheck
 ```
 
 ### Hidden preambles
@@ -47,7 +47,7 @@ Written as an indented example (the fence line is the usual ` ```quint ` one):
 
 Rules:
 
-- The comment must be the last thing before the fence (only whitespace between).
+- The preamble and check comments must immediately precede the fence, in either order (only whitespace between).
 - For a fragment, the preamble is placed **inside** the synthesized wrapper module.
 - If the preamble itself declares `module`s, they are emitted **beside** the
   wrapper -- that is how a bare `import Foo.*` snippet gets its dependency.
@@ -69,7 +69,8 @@ Rules:
 
 ### Runtime checks and the vacuity gate
 
-A block defining `init` and `step` is executed in `--run` mode. What it asserts
+All 22 blocks currently defining `init` and `step` pass the Quint 0.32.0 runtime
+gates. A block defining `init` and `step` is executed in `--run` mode. What it asserts
 comes from a `quint-check` directive, never from guesswork:
 
     <!-- quint-check
@@ -80,7 +81,7 @@ comes from a `quint-check` directive, never from guesswork:
     maxSamples: 2000
     -->
 
-- `invariants` must **hold**.
+- `invariants` must name at least one safety property that **holds**; strict runtime checks reject an empty list instead of accepting the CLI default `true`.
 - `witnesses` must be **violated**. A witness names a state the model is supposed
   to be able to reach (`witnessNeverFilled = orders.forall(o => o != Filled)`).
   If it holds, that state is unreachable, the lifecycle is stalled, and every
@@ -88,7 +89,7 @@ comes from a `quint-check` directive, never from guesswork:
   escrow template shipped with `Filled` and `Settled` unreachable because
   `init` seeded balances for `USERS` but not `FILLERS`, and both of its safety
   invariants reported `[ok]` on a protocol that could not execute.
-- `maxSteps`/`maxSamples` default to 12/2000. They must be wide enough to
+- `maxSteps`/`maxSamples` must be positive safe integers and default to 12/2000. Optional inline `#` comments are allowed. They must be wide enough to
   actually reach the witness state -- too small a budget reports "not violated"
   for a reachable state and turns the gate into the false confidence it exists
   to prevent.
@@ -114,8 +115,8 @@ export PATH="$JAVA_HOME/bin:$PATH"
 quint verify <spec>.qnt --main=<Instance> --invariant="a,b" --max-steps=4
 ```
 
-All 22 runnable blocks have been checked this way at `--max-steps=4` (about 6-21s
-each). Apalache is what found the Workflow deadlock -- `quint run` reported `[ok]`
+Historical checks covered the 22 runnable blocks on the pre-upgrade toolchain at
+`--max-steps=4` (about 6-21s each). These results must be rerun for Quint 0.32.0. Apalache is what found the Workflow deadlock -- `quint run` reported `[ok]`
 on it because random simulation cannot distinguish "no violation" from "no
 transitions". This is NOT wired into CI: it needs a JVM, and the runtime is
 sensitive to constant sizes. Run it manually before a release, or after changing
@@ -136,7 +137,7 @@ becomes unreachable and confirm the run exits non-zero.
 
 - Repository tooling pins `@informalsystems/quint` to an exact version in `package.json`.
 - If npm latest moves, bump the pinned package and lockfile before running `upstream:update`.
-- User-facing install instructions remain `@latest` to keep the skill current for end users.
+- User-facing installs pin the tested version exactly, currently `@informalsystems/quint@0.32.0`. Use `--save-exact` when upgrading the repository dependency, then update docs and metadata together after checks pass.
 - Weekly drift workflow runs upstream freshness and reference-governance checks, then opens/updates an actionable issue on failures.
 - `scripts/quint-upstream-check.mjs` treats command inventory discrepancies as drift unless explicitly allowlisted.
 
@@ -155,8 +156,11 @@ node scripts/quint-upstream-check.mjs --check
 # Validate executable snippets
 node scripts/validate-quint-snippets.mjs --strict-labels
 
-# Runtime smoke runnable executable snippets
-node scripts/validate-quint-snippets.mjs --run --strict-labels
+# CI type/effect checks across all fences
+npm run validate:quint:all:typecheck
+
+# CI invariants, reachability witnesses, and progress across all runnable blocks
+npm run validate:quint:runtime
 
 # Validate reference governance declarations
 node scripts/validate-reference-governance.mjs

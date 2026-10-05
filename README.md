@@ -48,7 +48,7 @@ Use the canonical CLI manual for command/flag behavior: https://quint.sh/docs/qu
 # (tracked in skills/quint-spec/references/UPSTREAM.json):
 npm install -g @informalsystems/quint@0.32.0
 
-# For formal verification: Java 17 minimum, Java 25 recommended (Apalache)
+# For formal verification: Java 17+ (Quint 0.32.0 bundles Apalache 0.56.1)
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
 ```
 
@@ -128,36 +128,37 @@ npm run upstream:update
 ```
 
 If npm latest has moved past the pinned local `@informalsystems/quint`, bump the dev
-dependency first with `npm install --save-dev @informalsystems/quint@<latest>`.
+dependency first with `npm install --save-dev --save-exact @informalsystems/quint@<version>`.
 
 ### Snippet Validation
 
 Quint snippets are label-driven:
 
-- ` ```quint executable ` blocks are standalone modules validated in CI (parse + optional typecheck/runtime).
-- ` ```quint illustrative ` blocks are self-contained but are **only validated manually** (`npm run validate:quint:all`), not in CI.
-- ` ```quint sketch ` blocks are partial Quint fragments counted but intentionally not typechecked.
+- ` ```quint executable ` blocks are standalone modules parsed and typechecked in CI.
+- ` ```quint illustrative ` blocks are typechecked in CI with any attached hidden preamble.
+- ` ```quint sketch ` blocks are reserved for partial fragments; they still face the hard-error and scope gates. Reference files using the all-fence CI policy cannot contain sketches.
 
-**Coverage note:** The majority of fences in reference files are `sketch` (partial
-fragments). The default CI pass (`validate:quint -- --strict-labels`) validates only
-`executable` fences. Runtime smoke (`validate:quint:runtime`) runs only snippets that
-define both `init` and `step`. Do not interpret a green CI as full semantic coverage.
+CI typechecks every Quint fence in the current references. The validator enforces a
+coverage floor, audits fence extraction, and rejects suspicious Quint inside text
+fences. Runtime checks run every selected block defining `init` and `step`, require
+explicit invariant and reachability-witness directives, and reject stalled models.
+These checks use bounded simulation; they do not prove properties for every execution.
 
 ```bash
-# CI-equivalent validation (standalone executable snippets only)
+# Parse standalone executable snippets with strict labels
 npm run validate:quint -- --strict-labels
 
-# Stronger executable validation (parse + type/effect checks)
+# Typecheck standalone executable snippets
 npm run validate:quint:typecheck
 
 # Ensure every reference file declares fence and validation policy
 npm run validate:references
 
-# Deep audit: parses all executable and illustrative Quint fences.
-# Recommended before release changes to references.
+# CI all-fence parse and type/effect checks
 npm run validate:quint:all
+npm run validate:quint:all:typecheck
 
-# Runtime smoke for executable snippets that define init and step.
+# CI invariants, reachability witnesses, and progress for all runnable blocks
 npm run validate:quint:runtime
 ```
 
