@@ -192,6 +192,67 @@ temporal intentsResolveShort =
 quint verify --backend=tlc --temporal=intentsResolve --max-steps=20 spec.qnt
 ```
 
+### Transition Relations in Temporal Properties (Quint 0.33.0)
+
+A state invariant reads one state. A temporal transition relation can read both
+`x` and `next(x)` without adding a ghost variable. Quint 0.33.0 supports these
+relations inside `orKeep` and `mustChange`, temporal conditionals, and action
+arguments. Actions passed through `not`, equality, or quantifiers in a temporal
+definition are interpreted as relations; they do not execute simulator updates.
+In an executable action, use `all` / `any` to compose assignments and `nondet`
+to choose values.
+
+This finite counter includes a real advance and a stutter. `nextOrKeep` permits
+both; `nextMustChange` requires the advance relation whenever a change occurs.
+`relationalArguments` passes the current and next values into a relation declared
+as an `action`. `actionNegation` shows that every non-stuttering step is an advance.
+None of these properties demands progress: stuttering forever remains permitted.
+Add a justified fairness assumption separately for a liveness claim.
+
+<!-- quint-check
+main: TemporalCounter
+invariants: bounded
+witnesses: witnessNeverAdvanced
+-->
+
+```quint illustrative
+module TemporalCounter {
+  var x: int
+  action init = x' = 0
+  action advance = x' = if (x < 3) x + 1 else 0
+  action stutter = x' = x
+  action step = any { advance, stutter }
+  val bounded = x >= 0 and x <= 3
+  val witnessNeverAdvanced = x == 0
+
+  action follows(before: int, after: int): bool =
+    after == (if (before < 3) before + 1 else 0)
+  temporal nextOrKeep = always(
+    (if (x < 3) next(x) == x + 1 else next(x) == 0).orKeep(Set(x))
+  )
+  temporal nextMustChange = always(
+    ((next(x) != x) implies follows(x, next(x)).mustChange(Set(x))).orKeep(Set(x))
+  )
+  temporal relationalArguments = always(follows(x, next(x)).orKeep(Set(x)))
+  temporal actionNegation = always(
+    (not(stutter) implies advance.mustChange(Set(x))).orKeep(Set(x))
+  )
+}
+```
+
+Save the model as `temporal-counter.qnt`, then check the four transition properties
+with TLC (Java 21+ for Quint 0.33.0's default Apalache distribution):
+
+```bash
+quint verify --backend=tlc --main=TemporalCounter --max-steps=10 \
+  --temporal=nextOrKeep,nextMustChange,relationalArguments,actionNegation temporal-counter.qnt
+```
+
+These formulas are checked through `--temporal`, not `--invariant`. Runtime
+validation of `bounded` and the witness exercises the model but does not check
+the temporal formulas. Keep the state space finite for TLC and record the actual
+search bound and backend when reporting results.
+
 ---
 
 ## 3. Spec-to-Boilerplate Generation (Forward Engineering)

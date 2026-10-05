@@ -14,7 +14,7 @@ always verify with `quint <command> --help` and the official CLI manual.
 ```bash
 # Reproducible install -- pin to the version this skill was tested with.
 # Using @latest installs whatever is current and may break skill patterns.
-npm install -g @informalsystems/quint@0.32.0
+npm install -g @informalsystems/quint@0.33.0
 
 # Verify
 quint --version
@@ -22,9 +22,9 @@ quint --version
 
 For formal verification (`quint verify`), Apalache is required:
 
-- Apalache requires **Java 17 or newer** (bytecode compatibility floor) and
-  **recommends Java 25** (Eclipse Temurin or Zulu); Java 17 is less thoroughly
-  tested upstream. `quint verify` will not start on an older JVM.
+- Quint 0.33.0 defaults to **Apalache 0.62.1**, which requires **Java 21 or
+  newer**. Check `java -version` in the shell running `quint verify`; an older
+  JVM cannot run this distribution.
 
 > **If `quint verify` dies before doing anything**, check the JVM first. On Java 11
 > it fails with:
@@ -66,7 +66,7 @@ For formal verification (`quint verify`), Apalache is required:
 <!-- END:CLI_COMMANDS -->
 
 The official CLI manual also documents `quint lint` and `quint indent` as future
-commands. The current `0.32.0` CLI does not expose them in `quint --help`, so do
+commands. The current `0.33.0` CLI does not expose them in `quint --help`, so do
 not recommend them as runnable commands until the local CLI confirms them.
 
 ## Core Commands
@@ -127,7 +127,7 @@ explicitly when reproducibility matters.
 | ----------------------- | -------- | --------------------------------------------------------------------------- |
 | `--invariant=<name>`    | `"true"` | Invariant expression or definition name to check                            |
 | `--witnesses <n1> <n2>` | `[]`     | Space-separated witness names; reports when a satisfying state is found     |
-| `--max-samples=N`       | see help | Maximum simulation runs; `0.32.0` uses `1` with `--seed`, otherwise `10000` |
+| `--max-samples=N`       | see help | Maximum simulation runs; `0.33.0` uses `1` with `--seed`, otherwise `10000` |
 | `--max-steps=N`         | `20`     | Maximum steps per trace                                                     |
 | `--n-traces=N`          | `1`      | Number of traces to generate                                                |
 | `--seed=<str>`          | —        | Random seed for reproducible runs                                           |
@@ -230,6 +230,6 @@ quint run --invariant=witnessNoActivity spec.qnt
 # 5. Thorough simulation
 quint run --invariant=myInvariant --max-samples=10000 --max-steps=50 spec.qnt
 
-# 6. Formal verification (requires Apalache + Java 17 minimum, Java 25 recommended)
+# 6. Formal verification (requires Apalache 0.62.1 + Java 21 minimum)
 quint verify --invariant=myInvariant --max-steps=10 spec.qnt
 ```

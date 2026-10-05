@@ -135,13 +135,37 @@ Every test runner needs four components:
 
 1. **Parser**: Read the `trace.itf.json` file. An ITF file contains an array of states, where each state includes the values of all variables.
 2. **State Mapper**: Translate Quint types (Maps, Sets, and integers -- unbounded in Apalache, i64 under the default Rust simulator) into language-specific types (e.g., `uint256`, HashMaps, Structs).
-3. **Action Mapper (The Harness)**: Infer which action occurred between `state[i]` and `state[i+1]` and call the corresponding implementation function.
+3. **Action Mapper (The Harness)**: Read `mbt::actionTaken` and
+   `mbt::nondetPicks` from `state[i+1]` and call the corresponding implementation
+   function with those decoded picks.
 4. **Assertion Engine**: After applying the action, verify that the implementation's state matches the expected `state[i+1]` from the Quint trace.
+
+Quint 0.33.0 fixes incorrect initial-state MBT metadata in the Rust evaluator.
+Treat `states[0]` as initialization, not as a transition to replay. Its metadata
+belongs to `init`; the metadata on `states[i + 1]` identifies the action that
+produced that destination state. Strip MBT fields when mapping application state,
+and decode ITF values (including maps and large integers) before passing picks to
+the implementation. Each named pick is tagged `Some` with a `value` when selected,
+or `None` when that binding was not selected for this state. Unwrap `Some.value`
+and omit inactive `None` entries; require the picks needed by the selected action.
+For an initializer without nondeterministic choices, initial picks are all `None`.
+Reject missing or unknown action labels and required picks instead of
+falling back to state-difference guesses. Regenerate traces made with 0.32.0 when
+relying on initial metadata.
 
 ### Pseudo-Code Runner Template
 
 ```javascript
 // Generic Pseudo-Code for Trace Runner
+
+function decodePicks(encodedPicks) {
+  const decoded = {}
+  for (const [name, pick] of Object.entries(encodedPicks)) {
+    if (pick.tag === 'Some') decoded[name] = decodeITF(pick.value)
+    else if (pick.tag !== 'None') throw new Error(`Unknown pick tag for ${name}`)
+  }
+  return decoded
+}
 
 function runTrace(traceFile, implementation) {
   const trace = parseITF(traceFile)
@@ -164,7 +188,8 @@ function runTrace(traceFile, implementation) {
     const picks = nextState['mbt::nondetPicks']
 
     // 3. Execution
-    executeMappedAction(implementation, action)
+    // This mapper must reject unknown actions or missing required picks.
+    executeMappedAction(implementation, action, decodePicks(picks))
 
     // 4. Assertion
     const actualImplState = implementation.getState()

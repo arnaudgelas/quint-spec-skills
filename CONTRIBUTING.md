@@ -66,8 +66,8 @@ and lockfile changes. The updater reads command inventory from the local pinned 
 - **Linting**: Run `npm run lint` before committing.
 - **Formatting**: We use `prettier`. Run `npm run format` to auto-format your changes.
 - **Quint runtime for tooling**: The repository pins `@informalsystems/quint` in `package.json` for deterministic checks.
-- **Quint in user-facing docs**: Pin the tested version exactly (currently `@informalsystems/quint@0.32.0`), consistent with the package and upstream snapshot. Upgrade deliberately after validation.
-- **Apalache**: Quint 0.32.0 bundles Apalache 0.56.1; use Java 17 or newer for symbolic verification.
+- **Quint in user-facing docs**: Pin the tested version exactly (currently `@informalsystems/quint@0.33.0`), consistent with the package and upstream snapshot. Upgrade deliberately after validation.
+- **Apalache**: Quint 0.33.0 bundles Apalache 0.62.1; use Java 21 or newer for symbolic verification.
 
 ## License
 

@@ -168,7 +168,10 @@ action incrementOnlyCounter = all {
 
 ### all { ... } -- Conjunction
 
-All conditions must hold and all updates apply atomically.
+All conditions must hold and all updates apply atomically. Quint 0.33.0 rejects
+`and`, `or`, `implies`, and `iff` when they combine assignments in an `action`.
+Use `all` and `any` for action composition; boolean expressions over current
+state may still use the logical operators.
 
 <!-- quint-preamble
 type Address = str
@@ -410,7 +413,7 @@ keys.mapBy(k => v)                   // Build map from key set (keys is Set[K]; 
 ```text
 always(p)                             // p holds in all states
 eventually(p)                         // p holds in some future state
-next(p)                               // p holds in the next state
+next(e)                               // Value of state expression e in the next state
 p.leadsTo(q)                          // Whenever p holds, q eventually holds (v0.32.0)
 enabled(action)                       // action's guards are satisfied in current state
 weakFair(A, Set(x, y))                // Weak fairness WF_vars(A) -- SET of variables
@@ -423,6 +426,25 @@ mustChange(A, Set(x))                 // <A>_vars: A takes a step AND vars chang
 > variable is unconstrained, so `weakFair(step, x)` typechecks silently and means
 > nothing. Always write `Set(...)`.
 >
+> Quint 0.33.0 allows transition relations built from `next` inside `orKeep` and
+> `mustChange`, temporal `if` expressions, and action arguments that read next-state
+> values. Declare these as `temporal`, not as a state invariant (`val`). Actions
+> still assign variables; a temporal relation describes a transition without
+> executing an update. See ADVANCED-TOPICS.md for a finite runnable model and TLC
+> commands.
+
+<!-- quint-preamble
+var x: int
+-->
+
+```quint illustrative
+temporal risesOrStutters = always((next(x) > x).orKeep(Set(x)))
+temporal alwaysChanges = always((next(x) != x).mustChange(Set(x)))
+temporal wraps = always(
+  (if (x < 3) next(x) == x + 1 else next(x) == 0).orKeep(Set(x))
+)
+```
+
 > There is **no** `guarantees`, `existsConst`, or `forallConst` in Quint — all three
 > are `QNT404: Name not found`. For quantification, use bounded `S.forall(x => p)`
 > and `S.exists(x => p)` over an explicit set.

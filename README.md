@@ -46,9 +46,9 @@ Use the canonical CLI manual for command/flag behavior: https://quint.sh/docs/qu
 ```bash
 # Reproducible install -- use the version this skill was tested with
 # (tracked in skills/quint-spec/references/UPSTREAM.json):
-npm install -g @informalsystems/quint@0.32.0
+npm install -g @informalsystems/quint@0.33.0
 
-# For formal verification: Java 17+ (Quint 0.32.0 bundles Apalache 0.56.1)
+# For formal verification: Java 21+ (Quint 0.33.0 bundles Apalache 0.62.1)
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
 ```
 

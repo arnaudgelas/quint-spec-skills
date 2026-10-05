@@ -843,7 +843,7 @@ async function validate() {
   // Coverage floor. Without it, a doc edit that drops most blocks still prints
   // "Validation successful" -- the summary counts whatever extraction happened to
   // return and never compares it to what the repo is known to contain.
-  const MIN_TOTAL_BLOCKS = Number(process.env.QUINT_MIN_BLOCKS ?? 83)
+  const MIN_TOTAL_BLOCKS = Number(process.env.QUINT_MIN_BLOCKS ?? 85)
   if (totalQuintBlocks < MIN_TOTAL_BLOCKS) {
     console.error(
       `\nValidation failed: found ${totalQuintBlocks} quint blocks but expected at least ${MIN_TOTAL_BLOCKS}.\nIf blocks were removed deliberately, lower the floor (QUINT_MIN_BLOCKS or the constant) in the same commit.`,

@@ -3,7 +3,7 @@
 ## Quint freshness policy
 
 - Keep local references aligned with the upstream Quint CLI manual and npm package metadata.
-- Keep Apalache JVM requirements aligned with the bundled release: Quint 0.32.0 defaults to Apalache 0.56.1 and requires Java 17+.
+- Keep Apalache JVM requirements aligned with the bundled release: Quint 0.33.0 defaults to Apalache 0.62.1 and requires Java 21+.
 - Avoid pinning static CLI defaults in markdown docs; prefer `quint <command> --help`.
 - Keep executable snippets aligned with the pinned Quint tool version.
 
@@ -15,7 +15,7 @@
   block. Not deep-typechecked -- but still subject to the hard-error gate below.
 - Unlabeled `\`\`\`quint` fences are not allowed in CI (`--strict-labels`).
 
-**There are currently ZERO `sketch` fences: all 83 Quint blocks are deep-typechecked
+**There are currently ZERO `sketch` fences: all 85 Quint blocks are deep-typechecked
 in CI**, and the count is enforced by a floor in the validator (`QUINT_MIN_BLOCKS`)
 so a doc edit cannot silently drop coverage. Keep it that way. `sketch` is an escape hatch for a block that genuinely
 cannot be made to compile, not a way to skip validation. Check with:
@@ -69,7 +69,7 @@ Rules:
 
 ### Runtime checks and the vacuity gate
 
-All 22 blocks currently defining `init` and `step` pass the Quint 0.32.0 runtime
+All 23 blocks currently defining `init` and `step` pass the Quint 0.33.0 runtime
 gates. A block defining `init` and `step` is executed in `--run` mode. What it asserts
 comes from a `quint-check` directive, never from guesswork:
 
@@ -115,8 +115,11 @@ export PATH="$JAVA_HOME/bin:$PATH"
 quint verify <spec>.qnt --main=<Instance> --invariant="a,b" --max-steps=4
 ```
 
-Historical checks covered the 22 runnable blocks on the pre-upgrade toolchain at
-`--max-steps=4` (about 6-21s each). These results must be rerun for Quint 0.32.0. Apalache is what found the Workflow deadlock -- `quint run` reported `[ok]`
+All 23 runnable blocks passed bounded symbolic checks on Quint 0.33.0 with
+Apalache 0.62.1 and Java 21 at `--max-steps=4` on 2026-10-05. The finite temporal
+counter also passed all four properties with TLC (four distinct states). See
+[the verification record](reports/quint-033-verification.json) and its archived
+source/log artifacts. Reproduce the bounded checks with `npm run validate:quint:symbolic`. Apalache is what found the Workflow deadlock -- `quint run` reported `[ok]`
 on it because random simulation cannot distinguish "no violation" from "no
 transitions". This is NOT wired into CI: it needs a JVM, and the runtime is
 sensitive to constant sizes. Run it manually before a release, or after changing
@@ -137,7 +140,7 @@ becomes unreachable and confirm the run exits non-zero.
 
 - Repository tooling pins `@informalsystems/quint` to an exact version in `package.json`.
 - If npm latest moves, bump the pinned package and lockfile before running `upstream:update`.
-- User-facing installs pin the tested version exactly, currently `@informalsystems/quint@0.32.0`. Use `--save-exact` when upgrading the repository dependency, then update docs and metadata together after checks pass.
+- User-facing installs pin the tested version exactly, currently `@informalsystems/quint@0.33.0`. Use `--save-exact` when upgrading the repository dependency, then update docs and metadata together after checks pass.
 - Weekly drift workflow runs upstream freshness and reference-governance checks, then opens/updates an actionable issue on failures.
 - `scripts/quint-upstream-check.mjs` treats command inventory discrepancies as drift unless explicitly allowlisted.
 

@@ -36,13 +36,13 @@ processes (workflows, auctions), DeFi (AMMs, lending), or cross-chain interop
 ```bash
 # Reproducible install -- use the version this skill was tested with
 # (tracked in skills/quint-spec/references/UPSTREAM.json):
-npm install -g @informalsystems/quint@0.32.0
+npm install -g @informalsystems/quint@0.33.0
 
 # Verify installation
 quint --version
 
 # For formal verification (quint verify), install Apalache:
-# Requires Java 17 minimum; Apalache recommends Java 25 (Temurin/Zulu)
+# Requires Java 21+ for the default Apalache 0.62.1
 # See: https://apalache-mc.org/docs/apalache/installation/jvm.html
 ```
 

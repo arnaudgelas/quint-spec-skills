@@ -207,17 +207,22 @@ action step = {
 
 ## Phase 5: Properties
 
-Define invariants (always true) and temporal properties (eventually true). These are
-what verification actually checks.
+Define state invariants and temporal properties. Temporal formulas can express
+both transition safety and liveness; these are what verification actually checks.
 
 **Types of properties:**
 
 - **State invariants** (`val`): Must hold in every reachable state
 - **Two-state properties**: relate the pre- and post-state. Quint has no "action invariant"
   construct -- `val p = x' > x` is `QNT000` and `next(x) > x` in a `val` is `QNT200`.
-  Encode them with a ghost variable holding the previous value (see DEFI-TEMPLATE.md
-  `kFloor` / `kNonDecreasing`).
-- **Temporal properties** (`temporal`): Express liveness (something eventually happens)
+  For simulator and Apalache invariant checks, encode them with a ghost variable
+  holding the previous value (see DEFI-TEMPLATE.md `kFloor` / `kNonDecreasing`).
+  With Quint 0.33.0 and TLC, alternatively declare a `temporal` relation using
+  `next`, such as `always((next(x) >= x).orKeep(Set(x)))`. Stuttering is allowed
+  by `orKeep`; use `mustChange` when the selected variables must change.
+- **Temporal properties** (`temporal`): Express transition safety, liveness, and
+  fairness. Check with `quint verify --backend=tlc --temporal=...`; `quint run`
+  checks state invariants, not temporal formulas.
 
 **Guidelines:**
 
